@@ -1,1 +1,10 @@
-
+{
+  "name": "NightSafe",
+  "short_name": "NightSafe",
+  "description": "Your space. Managed with care.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F6F2",
+  "theme_color": "#1B2B22",
+  "icons": []
+}
