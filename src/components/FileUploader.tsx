@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { CheckCircle2, UploadCloud, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { FileText, Repeat, UploadCloud, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface FileUploaderProps {
@@ -16,12 +16,23 @@ export function FileUploader({
   className,
 }: FileUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [file, setFileState] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
 
-  const setFile = (file: File | null) => {
-    setFileName(file?.name ?? null);
-    onFileSelect?.(file);
+  useEffect(() => {
+    if (!file || !file.type.startsWith("image/")) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  const setFile = (next: File | null) => {
+    setFileState(next);
+    onFileSelect?.(next);
   };
 
   return (
@@ -34,25 +45,42 @@ export function FileUploader({
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
       />
 
-      {fileName ? (
-        <div className="flex items-center justify-between gap-3 rounded-card border border-border bg-card p-4 shadow-subtle">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-input bg-sage-50">
-              <CheckCircle2 className="h-5 w-5 text-status-confirmed" />
+      {file ? (
+        <div className="overflow-hidden rounded-card border border-border bg-card shadow-subtle">
+          {previewUrl ? (
+            <div className="flex h-40 items-center justify-center bg-sage-50/50">
+              <img src={previewUrl} alt={file.name} className="h-full w-full object-cover" />
             </div>
+          ) : (
+            <div className="flex h-24 items-center justify-center bg-sage-50/50">
+              <FileText className="h-8 w-8 text-sage-500" />
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-3 p-4">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-ink">{fileName}</p>
+              <p className="truncate text-sm font-medium text-ink">{file.name}</p>
               <p className="text-xs text-ink/50">Ready to submit</p>
             </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                aria-label="Replace file"
+                className="flex h-8 w-8 items-center justify-center rounded-input text-ink/40 hover:bg-sage-50 hover:text-ink/70"
+              >
+                <Repeat className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setFile(null)}
+                aria-label="Remove file"
+                className="flex h-8 w-8 items-center justify-center rounded-input text-ink/40 hover:bg-sage-50 hover:text-ink/70"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            aria-label="Remove file"
-            onClick={() => setFile(null)}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-input text-ink/40 hover:bg-sage-50 hover:text-ink/70"
-          >
-            <X className="h-4 w-4" />
-          </button>
         </div>
       ) : (
         <button
