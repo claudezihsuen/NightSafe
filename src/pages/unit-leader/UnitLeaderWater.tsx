@@ -1,28 +1,15 @@
-import { Droplets } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Card } from "@/components/ui/Card";
-import { StatusBadge } from "@/components/ui/StatusBadge";
-import { Button } from "@/components/ui/Button";
+import { PaymentCard } from "@/components/PaymentCard";
+import { FileUploader } from "@/components/FileUploader";
 
 export function UnitLeaderWater() {
   return (
     <>
       <PageHeader title="Water" description="Submit and track water payments." />
-      <Card className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-input bg-sage-50">
-              <Droplets className="h-5 w-5 text-sage-600" />
-            </div>
-            <div>
-              <p className="font-medium text-midnight-800">This month</p>
-              <p className="text-sm text-midnight-500/70">$32.00</p>
-            </div>
-          </div>
-          <StatusBadge status="WAITING_PAYMENT" />
-        </div>
-        <Button icon={<Droplets className="h-4 w-4" />}>Upload water receipt</Button>
-      </Card>
+      <div className="flex flex-col gap-4">
+        <PaymentCard title="This month" subtitle="Unit 2B" amount="$32.00" status="WAITING_PAYMENT" />
+        <FileUploader label="Upload water receipt" hint="PNG, JPG or PDF, up to 10MB" />
+      </div>
     </>
   );
 }

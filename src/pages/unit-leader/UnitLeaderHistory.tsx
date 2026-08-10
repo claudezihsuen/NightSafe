@@ -1,7 +1,5 @@
-import { Droplets, Zap } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Card } from "@/components/ui/Card";
-import { StatusBadge } from "@/components/ui/StatusBadge";
+import { PaymentCard } from "@/components/PaymentCard";
 import type { PaymentStatus, UtilityType } from "@/types";
 
 const history: { type: UtilityType; month: string; amount: string; status: PaymentStatus }[] = [
@@ -16,24 +14,13 @@ export function UnitLeaderHistory() {
       <PageHeader title="History" description="Past water and electricity payments." />
       <div className="flex flex-col gap-3">
         {history.map((h, i) => (
-          <Card key={i} className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-input bg-sage-50">
-                {h.type === "WATER" ? (
-                  <Droplets className="h-[18px] w-[18px] text-sage-600" />
-                ) : (
-                  <Zap className="h-[18px] w-[18px] text-sage-600" />
-                )}
-              </div>
-              <div>
-                <p className="font-medium text-midnight-800">
-                  {h.type === "WATER" ? "Water" : "Electricity"} — {h.month}
-                </p>
-                <p className="text-sm text-midnight-500/70">{h.amount}</p>
-              </div>
-            </div>
-            <StatusBadge status={h.status} />
-          </Card>
+          <PaymentCard
+            key={i}
+            title={h.type === "WATER" ? "Water" : "Electricity"}
+            subtitle={h.month}
+            amount={h.amount}
+            status={h.status}
+          />
         ))}
       </div>
     </>
