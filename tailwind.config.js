@@ -4,31 +4,33 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Off-white app background
-        canvas: "#F7F6F2",
+        // App background
+        canvas: "#F7F7F5",
         // White cards
         card: "#FFFFFF",
-        // Deep Sage Green — primary brand color
+        // Primary — Deep Sage Green
         sage: {
-          50: "#F1F4F0",
-          100: "#E1E8DE",
-          200: "#C3D1BD",
-          300: "#9DB593",
-          400: "#7A9A6E",
-          500: "#5C7F4F",
-          600: "#48653E",
-          700: "#3A5133",
-          800: "#2E4029",
-          900: "#233220",
+          50: "#EFF3F0",
+          100: "#DDE6E0",
+          200: "#BACCC0",
+          300: "#93AF9D",
+          400: "#6D927A",
+          500: "#537F62",
+          600: "#496B5A",
+          700: "#3A5648",
+          800: "#2C4137",
+          900: "#1F2E27",
         },
-        // Midnight dark green — headings, dark surfaces
+        // Dark — headings, dark surfaces
         midnight: {
-          500: "#1B2B22",
-          600: "#16241C",
-          700: "#111C16",
-          800: "#0C1410",
-          900: "#080D0A",
+          500: "#2A3733",
+          600: "#20291F",
+          700: "#18221E",
+          800: "#121915",
+          900: "#0C110E",
         },
+        // Body text
+        ink: "#202522",
         // Soft status colors
         status: {
           waiting: "#B08A3E",
@@ -53,8 +55,8 @@ export default {
         card: "16px",
       },
       boxShadow: {
-        subtle: "0 1px 2px rgba(17, 28, 22, 0.04), 0 2px 8px rgba(17, 28, 22, 0.04)",
-        raised: "0 2px 4px rgba(17, 28, 22, 0.05), 0 8px 24px rgba(17, 28, 22, 0.06)",
+        subtle: "0 1px 2px rgba(24, 34, 30, 0.04), 0 2px 8px rgba(24, 34, 30, 0.04)",
+        raised: "0 2px 4px rgba(24, 34, 30, 0.05), 0 8px 24px rgba(24, 34, 30, 0.06)",
       },
     },
   },
