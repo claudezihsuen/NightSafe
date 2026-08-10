@@ -11,8 +11,8 @@ export function LoginPage() {
           <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-input bg-midnight-600">
             <ShieldCheck className="h-6 w-6 text-sage-200" />
           </div>
-          <h1 className="text-lg font-semibold text-midnight-800">NightSafe</h1>
-          <p className="text-sm text-midnight-500/70">Your space. Managed with care.</p>
+          <h1 className="text-lg font-semibold text-ink">NightSafe</h1>
+          <p className="text-sm text-ink/60">Your space. Managed with care.</p>
         </div>
 
         <form className="flex flex-col gap-4">
