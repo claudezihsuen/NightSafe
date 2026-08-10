@@ -16,8 +16,8 @@ export function Sidebar({ items, roleLabel }: SidebarProps) {
           <ShieldCheck className="h-5 w-5 text-sage-200" />
         </div>
         <div>
-          <p className="text-sm font-semibold leading-tight text-midnight-800">NightSafe</p>
-          <p className="text-xs leading-tight text-midnight-500/60">{roleLabel}</p>
+          <p className="text-sm font-semibold leading-tight text-ink">NightSafe</p>
+          <p className="text-xs leading-tight text-ink/50">{roleLabel}</p>
         </div>
       </div>
 
@@ -32,7 +32,7 @@ export function Sidebar({ items, roleLabel }: SidebarProps) {
                 "flex items-center gap-3 rounded-input px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive
                   ? "bg-sage-50 text-sage-700"
-                  : "text-midnight-600 hover:bg-sage-50/60 hover:text-midnight-800",
+                  : "text-midnight-600 hover:bg-sage-50/60 hover:text-ink",
               )
             }
           >
@@ -42,7 +42,7 @@ export function Sidebar({ items, roleLabel }: SidebarProps) {
         ))}
       </nav>
 
-      <p className="px-2 text-xs text-midnight-500/50">Your space. Managed with care.</p>
+      <p className="px-2 text-xs text-ink/40">Your space. Managed with care.</p>
     </aside>
   );
 }
