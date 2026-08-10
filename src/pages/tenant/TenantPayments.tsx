@@ -1,24 +1,30 @@
+import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { PaymentCard } from "@/components/PaymentCard";
-import { FileUploader } from "@/components/FileUploader";
-import type { PaymentStatus } from "@/types";
-
-const history: { month: string; amount: string; status: PaymentStatus }[] = [
-  { month: "August", amount: "$1,200.00", status: "WAITING_PAYMENT" },
-  { month: "July", amount: "$1,200.00", status: "PAYMENT_CONFIRMED" },
-  { month: "June", amount: "$1,200.00", status: "PAYMENT_CONFIRMED" },
-];
+import { RentMonthCard } from "@/components/RentMonthCard";
+import { useTenantPayments } from "@/lib/tenant-payments-context";
 
 export function TenantPayments() {
+  const navigate = useNavigate();
+  const { records } = useTenantPayments();
+
   return (
-    <>
-      <PageHeader title="Payments" description="Your rent payment history." />
-      <FileUploader label="Upload rent receipt" hint="PNG, JPG or PDF, up to 10MB" className="mb-5" />
+    <div className="animate-fade-in-up">
+      <PageHeader title="Payments" description="Your monthly rent history." />
       <div className="flex flex-col gap-3">
-        {history.map((h) => (
-          <PaymentCard key={h.month} title={h.month} subtitle="Rent" amount={h.amount} status={h.status} />
+        {records.map((r) => (
+          <RentMonthCard
+            key={r.id}
+            monthLabel={r.monthLabel}
+            amount={r.amount}
+            dueDate={r.dueDate}
+            status={r.status}
+            hasReceipt={Boolean(r.receiptFileName)}
+            onClick={() =>
+              navigate(r.status === "WAITING_PAYMENT" ? `/tenant/payments/${r.id}/pay` : `/tenant/payments/${r.id}`)
+            }
+          />
         ))}
       </div>
-    </>
+    </div>
   );
 }
