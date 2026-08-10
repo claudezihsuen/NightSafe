@@ -1,18 +1,27 @@
-import { Users } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
+import { TenantCard } from "@/components/TenantCard";
+
+const people = [
+  { name: "Maria Lopez", unitLabel: "Sagewood 2B" },
+  { name: "James Okoro", unitLabel: "Harbor View 5A", isUnitLeader: true },
+  { name: "Priya Nair", unitLabel: "Willow Court 1" },
+  { name: "Tom Becker", unitLabel: "Sagewood 4A" },
+];
 
 export function OwnerPeople() {
   return (
     <>
-      <PageHeader title="People" description="Agents, unit leaders, and tenants." />
-      <EmptyState
-        icon={Users}
-        title="No people yet"
-        description="Agents and tenants you add will show up here."
+      <PageHeader
+        title="People"
+        description="Agents, unit leaders, and tenants."
         action={<Button size="sm">Invite someone</Button>}
       />
+      <div className="flex flex-col gap-3">
+        {people.map((p) => (
+          <TenantCard key={p.name} {...p} />
+        ))}
+      </div>
     </>
   );
 }

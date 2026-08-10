@@ -1,6 +1,5 @@
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Card } from "@/components/ui/Card";
-import { StatusBadge } from "@/components/ui/StatusBadge";
+import { PaymentCard } from "@/components/PaymentCard";
 import type { PaymentStatus } from "@/types";
 
 const payments: { tenant: string; unit: string; amount: string; status: PaymentStatus }[] = [
@@ -16,16 +15,7 @@ export function OwnerPayments() {
       <PageHeader title="Payments" description="Rent payments across all properties." />
       <div className="flex flex-col gap-3">
         {payments.map((p) => (
-          <Card key={p.tenant} className="flex items-center justify-between gap-3">
-            <div>
-              <p className="font-medium text-midnight-800">{p.tenant}</p>
-              <p className="text-sm text-midnight-500/70">{p.unit}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-midnight-800">{p.amount}</span>
-              <StatusBadge status={p.status} />
-            </div>
-          </Card>
+          <PaymentCard key={p.tenant} title={p.tenant} subtitle={p.unit} amount={p.amount} status={p.status} />
         ))}
       </div>
     </>
