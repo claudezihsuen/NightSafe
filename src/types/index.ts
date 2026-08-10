@@ -10,6 +10,13 @@ export type PaymentStatus =
 
 export type UtilityType = "WATER" | "ELECTRICITY";
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+}
+
 export interface NavItem {
   label: string;
   path: string;
