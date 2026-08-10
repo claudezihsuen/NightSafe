@@ -1,11 +1,11 @@
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { TenantCard } from "@/components/TenantCard";
 
 const tenants = [
-  { name: "Maria Lopez", unit: "Sagewood 2B" },
-  { name: "Tom Becker", unit: "Sagewood 4A" },
-  { name: "Priya Nair", unit: "Willow Court 1" },
+  { name: "Maria Lopez", unitLabel: "Sagewood 2B" },
+  { name: "Tom Becker", unitLabel: "Sagewood 4A" },
+  { name: "Priya Nair", unitLabel: "Willow Court 1", isUnitLeader: true },
 ];
 
 export function AgentTenants() {
@@ -18,12 +18,7 @@ export function AgentTenants() {
       />
       <div className="flex flex-col gap-3">
         {tenants.map((t) => (
-          <Card key={t.name} className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-midnight-800">{t.name}</p>
-              <p className="text-sm text-midnight-500/70">{t.unit}</p>
-            </div>
-          </Card>
+          <TenantCard key={t.name} {...t} />
         ))}
       </div>
     </>

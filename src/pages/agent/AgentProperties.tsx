@@ -1,6 +1,5 @@
-import { Building2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Card } from "@/components/ui/Card";
+import { PropertyCard } from "@/components/PropertyCard";
 
 const properties = [
   { name: "Sagewood Residences", units: 8, address: "12 Fern Lane" },
@@ -13,16 +12,7 @@ export function AgentProperties() {
       <PageHeader title="Properties" description="Properties assigned to you." />
       <div className="grid gap-4 sm:grid-cols-2">
         {properties.map((p) => (
-          <Card key={p.name} className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-input bg-sage-50">
-              <Building2 className="h-5 w-5 text-sage-600" />
-            </div>
-            <div>
-              <p className="font-medium text-midnight-800">{p.name}</p>
-              <p className="text-sm text-midnight-500/70">{p.address}</p>
-              <p className="mt-1 text-xs text-midnight-500/60">{p.units} units</p>
-            </div>
-          </Card>
+          <PropertyCard key={p.name} {...p} />
         ))}
       </div>
     </>
