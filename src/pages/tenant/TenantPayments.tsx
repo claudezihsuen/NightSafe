@@ -1,8 +1,6 @@
-import { Wallet } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Card } from "@/components/ui/Card";
-import { StatusBadge } from "@/components/ui/StatusBadge";
-import { Button } from "@/components/ui/Button";
+import { PaymentCard } from "@/components/PaymentCard";
+import { FileUploader } from "@/components/FileUploader";
 import type { PaymentStatus } from "@/types";
 
 const history: { month: string; amount: string; status: PaymentStatus }[] = [
@@ -14,20 +12,11 @@ const history: { month: string; amount: string; status: PaymentStatus }[] = [
 export function TenantPayments() {
   return (
     <>
-      <PageHeader
-        title="Payments"
-        description="Your rent payment history."
-        action={<Button size="sm" icon={<Wallet className="h-4 w-4" />}>Upload receipt</Button>}
-      />
+      <PageHeader title="Payments" description="Your rent payment history." />
+      <FileUploader label="Upload rent receipt" hint="PNG, JPG or PDF, up to 10MB" className="mb-5" />
       <div className="flex flex-col gap-3">
         {history.map((h) => (
-          <Card key={h.month} className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-midnight-800">{h.month}</p>
-              <p className="text-sm text-midnight-500/70">{h.amount}</p>
-            </div>
-            <StatusBadge status={h.status} />
-          </Card>
+          <PaymentCard key={h.month} title={h.month} subtitle="Rent" amount={h.amount} status={h.status} />
         ))}
       </div>
     </>

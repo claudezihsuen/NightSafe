@@ -13,8 +13,8 @@ export function TenantAgreement() {
             <FileText className="h-5 w-5 text-sage-600" />
           </div>
           <div>
-            <p className="font-medium text-midnight-800">Lease agreement</p>
-            <p className="text-sm text-midnight-500/70">Signed Jan 1, 2026 · 12 months</p>
+            <p className="font-medium text-ink">Lease agreement</p>
+            <p className="text-sm text-ink/60">Signed Jan 1, 2026 · 12 months</p>
           </div>
         </div>
         <Button variant="secondary" size="sm">
