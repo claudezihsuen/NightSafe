@@ -28,8 +28,11 @@ import { UnitLeaderHistory } from "@/pages/unit-leader/UnitLeaderHistory";
 import { TenantLayout } from "@/layouts/TenantLayout";
 import { TenantHome } from "@/pages/tenant/TenantHome";
 import { TenantPayments } from "@/pages/tenant/TenantPayments";
+import { TenantPaymentDetails } from "@/pages/tenant/TenantPaymentDetails";
+import { TenantMakePayment } from "@/pages/tenant/TenantMakePayment";
 import { TenantAgreement } from "@/pages/tenant/TenantAgreement";
 import { TenantNotifications } from "@/pages/tenant/TenantNotifications";
+import { TenantPaymentsProvider } from "@/lib/tenant-payments-context";
 
 export default function App() {
   return (
@@ -85,12 +88,16 @@ export default function App() {
           path="/tenant"
           element={
             <ProtectedRoute allowedRoles={["TENANT"]}>
-              <TenantLayout />
+              <TenantPaymentsProvider>
+                <TenantLayout />
+              </TenantPaymentsProvider>
             </ProtectedRoute>
           }
         >
           <Route index element={<TenantHome />} />
           <Route path="payments" element={<TenantPayments />} />
+          <Route path="payments/:month" element={<TenantPaymentDetails />} />
+          <Route path="payments/:month/pay" element={<TenantMakePayment />} />
           <Route path="agreement" element={<TenantAgreement />} />
           <Route path="notifications" element={<TenantNotifications />} />
         </Route>
