@@ -55,7 +55,7 @@ export function TenantMakePayment() {
     return <Navigate to={`/tenant/payments/${record.id}`} replace />;
   }
 
-  function handleSubmit(e: FormEvent) {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!method) {
       setError("Select a payment method.");
@@ -68,7 +68,7 @@ export function TenantMakePayment() {
     setError(null);
     submitPayment(record.id, { method, receiptFileName: receipt.name, note: note || undefined });
     setSubmitted(true);
-  }
+  };
 
   return (
     <div className="animate-fade-in-up">
