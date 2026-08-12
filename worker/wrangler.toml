@@ -3,13 +3,13 @@ main = "src/index.ts"
 compatibility_date = "2024-09-23"
 
 [vars]
-ENVIRONMENT = "development"
-FRONTEND_URL = "http://localhost:5173"
+ENVIRONMENT = "production"
+FRONTEND_URL = "https://nightsafe.pages.dev"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "nightsafe-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "451d7ba8-5ee9-47e6-b710-1795f02c18bb"
 
 # For production, override vars via `wrangler deploy` environments or the
 # dashboard, e.g.:
