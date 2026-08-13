@@ -9,10 +9,14 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const isFormData = init?.body instanceof FormData;
+
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include", // send/receive the HTTP-only session cookie
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: isFormData
+      ? init?.headers // let the browser set Content-Type (multipart boundary)
+      : { "Content-Type": "application/json", ...init?.headers },
   });
 
   const data = await res.json().catch(() => null);
@@ -28,4 +32,5 @@ export const api = {
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  postForm: <T>(path: string, form: FormData) => request<T>(path, { method: "POST", body: form }),
 };
