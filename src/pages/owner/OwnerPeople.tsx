@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { TenantCard } from "@/components/TenantCard";
@@ -15,7 +16,11 @@ export function OwnerPeople() {
       <PageHeader
         title="People"
         description="Agents, unit leaders, and tenants."
-        action={<Button size="sm">Invite someone</Button>}
+        action={
+          <Link to="/owner/people/new">
+            <Button size="sm">Add tenant</Button>
+          </Link>
+        }
       />
       <div className="flex flex-col gap-3">
         {people.map((p) => (
