@@ -22,6 +22,19 @@ export interface AuthUser {
   role: Role;
 }
 
+export interface OwnerUnit {
+  id: string;
+  label: string;
+  monthly_rent: number; // cents
+}
+
+export interface OwnerProperty {
+  id: string;
+  name: string;
+  address: string;
+  units: OwnerUnit[];
+}
+
 export interface NavItem {
   label: string;
   path: string;
