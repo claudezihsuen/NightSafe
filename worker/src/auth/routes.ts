@@ -17,7 +17,7 @@ function json(data: unknown, status = 200, extraHeaders: HeadersInit = {}): Resp
   });
 }
 
-const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+export const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
 /** POST /api/auth/login */
 export async function login(request: Request, env: Env): Promise<Response> {
