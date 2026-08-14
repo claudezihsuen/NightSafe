@@ -1,14 +1,13 @@
 import { useState } from "react";
-import type { FormEvent } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Select } from "@/components/ui/Select";
-import { Textarea } from "@/components/ui/Textarea";
 import { FileUploader } from "@/components/FileUploader";
 import { useTenantPayments } from "@/lib/tenant-payments-context";
+import { ApiError } from "@/lib/api";
+import { formatCents, formatDate, formatMonth } from "@/lib/format";
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -20,17 +19,17 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 export function TenantMakePayment() {
-  const { month } = useParams<{ month: string }>();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { getRecord, submitPayment } = useTenantPayments();
-  const record = month ? getRecord(month) : undefined;
+  const { getRecord, submitPayment, loading } = useTenantPayments();
+  const record = id ? getRecord(id) : undefined;
 
-  const [method, setMethod] = useState("");
   const [receipt, setReceipt] = useState<File | null>(null);
-  const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
+  if (loading) return null;
   if (!record) return <Navigate to="/tenant/payments" replace />;
 
   if (submitted) {
@@ -50,24 +49,26 @@ export function TenantMakePayment() {
     );
   }
 
-  // Only unpaid or rejected months can be (re)submitted; anything else belongs on the details page.
-  if (record.status !== "WAITING_PAYMENT" && record.status !== "REJECTED") {
+  // Only a month still awaiting the tenant can be submitted here.
+  if (record.status !== "WAITING_PAYMENT") {
     return <Navigate to={`/tenant/payments/${record.id}`} replace />;
   }
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    if (!method) {
-      setError("Select a payment method.");
-      return;
-    }
+  const handleSubmit = async () => {
     if (!receipt) {
       setError("Upload your payment receipt.");
       return;
     }
     setError(null);
-    submitPayment(record.id, { method, receiptFileName: receipt.name, note: note || undefined });
-    setSubmitted(true);
+    setSubmitting(true);
+    try {
+      await submitPayment(record.id, receipt);
+      setSubmitted(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -80,40 +81,26 @@ export function TenantMakePayment() {
         Payments
       </Link>
 
-      <PageHeader title="Make a payment" description={record.monthLabel} />
+      <PageHeader title="Make a payment" description={formatMonth(record.month)} />
 
       <Card className="mb-4">
-        <Row label="Month" value={record.monthLabel} />
-        <Row label="Rent amount" value={record.amount} />
-        <Row label="Due date" value={record.dueDate} />
+        <Row label="Month" value={formatMonth(record.month)} />
+        <Row label="Rent amount" value={formatCents(record.amountCents)} />
+        <Row label="Due date" value={formatDate(record.dueDate)} />
       </Card>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <Select label="Payment method" value={method} onChange={(e) => setMethod(e.target.value)}>
-          <option value="">Select a method</option>
-          <option value="Bank Transfer">Bank Transfer</option>
-          <option value="Mobile Money">Mobile Money</option>
-          <option value="Cash">Cash</option>
-        </Select>
-
+      <div className="flex flex-col gap-4">
         <div>
           <p className="mb-1.5 text-sm font-medium text-ink/80">Receipt</p>
           <FileUploader onFileSelect={setReceipt} />
         </div>
 
-        <Textarea
-          label="Note (optional)"
-          placeholder="Anything the owner or agent should know"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-
         {error && <p className="text-sm text-status-overdue">{error}</p>}
 
-        <Button type="submit" className="mt-2 w-full">
+        <Button onClick={handleSubmit} loading={submitting} className="w-full">
           Submit payment
         </Button>
-      </form>
+      </div>
     </div>
   );
 }

@@ -4,9 +4,11 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { HeroCard } from "@/components/HeroCard";
 import { UnitCard } from "@/components/UnitCard";
 import { NotificationItem } from "@/components/NotificationItem";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/lib/auth-context";
 import { useTenantPayments } from "@/lib/tenant-payments-context";
+import { formatCents, formatDate, formatMonth } from "@/lib/format";
 
 const quickActions = [
   { label: "Payment history", description: "See all past months", icon: History, to: "/tenant/payments" },
@@ -18,8 +20,8 @@ const recentNotifications = [
   {
     icon: Wallet,
     title: "Rent due soon",
-    description: "Your August rent of $1,200.00 is due on Aug 15.",
-    time: "2h ago",
+    description: "Check your latest rent status below.",
+    time: "Just now",
     unread: true,
   },
   {
@@ -32,44 +34,41 @@ const recentNotifications = [
 
 export function TenantHome() {
   const { user } = useAuth();
-  const { currentRecord } = useTenantPayments();
+  const { currentRecord, loading } = useTenantPayments();
   const firstName = user?.name?.split(" ")[0];
 
   const isWaiting = currentRecord?.status === "WAITING_PAYMENT";
 
   return (
     <div className="animate-fade-in-up">
-      <PageHeader
-        title={firstName ? `Welcome back, ${firstName}` : "Home"}
-        description="Sagewood Residences — Unit 2B"
-      />
+      <PageHeader title={firstName ? `Welcome back, ${firstName}` : "Home"} description="Your rental at a glance." />
 
-      <HeroCard
-        eyebrow={currentRecord?.monthLabel ?? "This month"}
-        title={isWaiting ? "Your rent is due soon" : "You're all caught up"}
-        description={
-          isWaiting
-            ? `${currentRecord?.amount} due by ${currentRecord?.dueDate}. Submit your receipt once paid.`
-            : "No action needed on your rent right now."
-        }
-        value={currentRecord?.amount}
-        valueLabel={isWaiting ? "due" : "this month"}
-        icon={Wallet}
-        action={
-          isWaiting && currentRecord ? (
-            <Link to={`/tenant/payments/${currentRecord.id}/pay`}>
-              <Button size="sm">Make payment</Button>
-            </Link>
-          ) : undefined
-        }
-        className="mb-4"
-      />
+      {loading ? (
+        <Skeleton className="mb-4 h-40 w-full" />
+      ) : (
+        <HeroCard
+          eyebrow={currentRecord ? formatMonth(currentRecord.month) : "This month"}
+          title={isWaiting ? "Your rent is due soon" : "You're all caught up"}
+          description={
+            currentRecord && isWaiting
+              ? `${formatCents(currentRecord.amountCents)} due by ${formatDate(currentRecord.dueDate)}. Submit your receipt once paid.`
+              : "No action needed on your rent right now."
+          }
+          value={currentRecord ? formatCents(currentRecord.amountCents) : undefined}
+          valueLabel={isWaiting ? "due" : "this month"}
+          icon={Wallet}
+          action={
+            isWaiting && currentRecord ? (
+              <Link to={`/tenant/payments/${currentRecord.id}/pay`}>
+                <Button size="sm">Make payment</Button>
+              </Link>
+            ) : undefined
+          }
+          className="mb-4"
+        />
+      )}
 
-      <UnitCard
-        unitLabel="Unit 2B"
-        propertyName="Sagewood Residences · 12 Fern Lane"
-        className="mb-6"
-      />
+      <UnitCard unitLabel="Your unit" propertyName="Managed by your property owner" className="mb-6" />
 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {quickActions.map(({ label, description, icon: Icon, to }) => (
