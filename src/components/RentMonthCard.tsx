@@ -1,13 +1,13 @@
 import { ChevronRight, Paperclip } from "lucide-react";
-import { RentStatusBadge } from "@/components/RentStatusBadge";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { cn } from "@/lib/utils";
-import type { RentStatus } from "@/types";
+import type { PaymentStatus } from "@/types";
 
 interface RentMonthCardProps {
   monthLabel: string;
   amount: string;
   dueDate: string;
-  status: RentStatus;
+  status: PaymentStatus;
   hasReceipt?: boolean;
   onClick?: () => void;
   className?: string;
@@ -40,7 +40,7 @@ export function RentMonthCard({
         <p className="mt-0.5 text-sm text-ink/60">
           {amount} · Due {dueDate}
         </p>
-        <RentStatusBadge status={status} className="mt-2" />
+        <StatusBadge status={status} className="mt-2" />
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-ink/30" />
     </button>
