@@ -41,11 +41,11 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
       >
         {title && (
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-base font-semibold text-midnight-800">{title}</h2>
+            <h2 className="text-base font-semibold text-ink">{title}</h2>
             <button
               onClick={onClose}
               aria-label="Close"
-              className="rounded-input p-1.5 text-midnight-500 hover:bg-sage-50 hover:text-midnight-700"
+              className="rounded-input p-1.5 text-midnight-500 hover:bg-sage-50 hover:text-ink"
             >
               <X className="h-5 w-5" />
             </button>

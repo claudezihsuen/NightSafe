@@ -24,8 +24,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           id={inputId}
           className={cn(
-            "h-11 rounded-input border border-border bg-white px-3.5 text-sm text-midnight-800",
-            "placeholder:text-midnight-500/40",
+            "h-11 rounded-input border border-border bg-white px-3.5 text-sm text-ink",
+            "placeholder:text-ink/35",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas",
             error && "border-status-overdue focus-visible:ring-status-overdue",
             className,
@@ -40,7 +40,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           </p>
         )}
         {!error && hint && (
-          <p id={`${inputId}-hint`} className="text-sm text-midnight-500/70">
+          <p id={`${inputId}-hint`} className="text-sm text-ink/60">
             {hint}
           </p>
         )}
