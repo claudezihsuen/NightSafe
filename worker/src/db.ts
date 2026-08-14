@@ -1,4 +1,4 @@
-import type { Env, UserRow, SessionUser } from "./types";
+import type { Env, UserRow, SessionUser, PropertyRow, UnitRow } from "./types";
 
 export async function getUserByEmail(env: Env, email: string): Promise<UserRow | null> {
   const row = await env.DB.prepare("SELECT * FROM users WHERE email = ?")
@@ -45,4 +45,37 @@ export async function getSessionUser(env: Env, tokenHash: string): Promise<Sessi
   if (!user || user.status !== "ACTIVE") return null;
 
   return toSessionUser(user);
+}
+
+export async function getPropertyById(env: Env, id: string): Promise<PropertyRow | null> {
+  const row = await env.DB.prepare("SELECT * FROM properties WHERE id = ?").bind(id).first<PropertyRow>();
+  return row ?? null;
+}
+
+export async function getUnitById(env: Env, id: string): Promise<UnitRow | null> {
+  const row = await env.DB.prepare("SELECT * FROM units WHERE id = ?").bind(id).first<UnitRow>();
+  return row ?? null;
+}
+
+/** Properties owned by this Owner, each with its units — for the tenant-creation picker. */
+export async function listOwnerPropertiesWithUnits(env: Env, ownerId: string) {
+  const properties = await env.DB.prepare(
+    "SELECT * FROM properties WHERE owner_id = ? ORDER BY name",
+  )
+    .bind(ownerId)
+    .all<PropertyRow>();
+
+  const units = await env.DB.prepare(
+    `SELECT units.* FROM units
+     JOIN properties ON properties.id = units.property_id
+     WHERE properties.owner_id = ?
+     ORDER BY units.label`,
+  )
+    .bind(ownerId)
+    .all<UnitRow>();
+
+  return (properties.results ?? []).map((property) => ({
+    ...property,
+    units: (units.results ?? []).filter((unit) => unit.property_id === property.id),
+  }));
 }
