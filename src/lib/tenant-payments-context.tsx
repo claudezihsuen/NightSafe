@@ -1,151 +1,98 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { RentStatus } from "@/types";
+import { api, ApiError } from "@/lib/api";
+import type { PaymentStatus } from "@/types";
 
 export interface RentRecord {
-  id: string; // e.g. "2026-08" — used as the route param
-  monthLabel: string; // e.g. "August 2026"
-  amount: string;
-  dueDate: string;
-  status: RentStatus;
-  submittedDate?: string;
-  paymentDate?: string;
-  reviewedBy?: string;
-  rejectionReason?: string;
-  note?: string;
-  method?: string;
-  receiptFileName?: string;
+  id: string;
+  leaseId: string;
+  month: string; // 'YYYY-MM'
+  amountCents: number;
+  dueDate: string; // 'YYYY-MM-DD'
+  status: PaymentStatus;
+  receiptKey: string | null;
+  submittedAt: string | null;
+  paymentDate: string | null;
+  reviewedByName: string | null;
 }
 
-const initialRecords: RentRecord[] = [
-  {
-    id: "2026-08",
-    monthLabel: "August 2026",
-    amount: "$1,200.00",
-    dueDate: "Aug 15, 2026",
-    status: "WAITING_PAYMENT",
-  },
-  {
-    id: "2026-07",
-    monthLabel: "July 2026",
-    amount: "$1,200.00",
-    dueDate: "Jul 5, 2026",
-    status: "PAID",
-    submittedDate: "Jul 2, 2026",
-    paymentDate: "Jul 3, 2026",
-    reviewedBy: "James Okoro (Agent)",
-    receiptFileName: "july-rent-receipt.jpg",
-  },
-  {
-    id: "2026-06",
-    monthLabel: "June 2026",
-    amount: "$1,200.00",
-    dueDate: "Jun 5, 2026",
-    status: "PENDING",
-    submittedDate: "Jun 4, 2026",
-    receiptFileName: "june-rent-receipt.pdf",
-  },
-  {
-    id: "2026-05",
-    monthLabel: "May 2026",
-    amount: "$1,200.00",
-    dueDate: "May 5, 2026",
-    status: "PAYMENT_CONFIRMED",
-    submittedDate: "May 3, 2026",
-    paymentDate: "May 4, 2026",
-    reviewedBy: "Sarah Chen (Owner)",
-    receiptFileName: "may-rent-receipt.jpg",
-  },
-  {
-    id: "2026-04",
-    monthLabel: "April 2026",
-    amount: "$1,200.00",
-    dueDate: "Apr 5, 2026",
-    status: "REJECTED",
-    submittedDate: "Apr 6, 2026",
-    reviewedBy: "James Okoro (Agent)",
-    rejectionReason: "Receipt image was blurry — please re-upload a clearer photo.",
-    receiptFileName: "april-rent-receipt.jpg",
-  },
-  {
-    id: "2026-03",
-    monthLabel: "March 2026",
-    amount: "$1,200.00",
-    dueDate: "Mar 5, 2026",
-    status: "PAID",
-    submittedDate: "Mar 3, 2026",
-    paymentDate: "Mar 4, 2026",
-    reviewedBy: "James Okoro (Agent)",
-    receiptFileName: "march-rent-receipt.jpg",
-  },
-  {
-    id: "2026-02",
-    monthLabel: "February 2026",
-    amount: "$1,200.00",
-    dueDate: "Feb 5, 2026",
-    status: "PAID",
-    submittedDate: "Feb 3, 2026",
-    paymentDate: "Feb 4, 2026",
-    reviewedBy: "Sarah Chen (Owner)",
-    receiptFileName: "february-rent-receipt.jpg",
-  },
-  {
-    id: "2026-01",
-    monthLabel: "January 2026",
-    amount: "$1,200.00",
-    dueDate: "Jan 5, 2026",
-    status: "PAID",
-    submittedDate: "Jan 2, 2026",
-    paymentDate: "Jan 3, 2026",
-    reviewedBy: "Sarah Chen (Owner)",
-    receiptFileName: "january-rent-receipt.jpg",
-  },
-];
+interface ApiRentPayment {
+  id: string;
+  lease_id: string;
+  month: string;
+  amount: number;
+  due_date: string;
+  status: PaymentStatus;
+  receipt_key: string | null;
+  submitted_at: string | null;
+  payment_date: string | null;
+  reviewed_by_name: string | null;
+}
 
-export interface SubmitPaymentInput {
-  method: string;
-  receiptFileName: string;
-  note?: string;
+function fromApi(p: ApiRentPayment): RentRecord {
+  return {
+    id: p.id,
+    leaseId: p.lease_id,
+    month: p.month,
+    amountCents: p.amount,
+    dueDate: p.due_date,
+    status: p.status,
+    receiptKey: p.receipt_key,
+    submittedAt: p.submitted_at,
+    paymentDate: p.payment_date,
+    reviewedByName: p.reviewed_by_name,
+  };
 }
 
 interface TenantPaymentsContextValue {
   records: RentRecord[];
+  loading: boolean;
+  error: string | null;
   getRecord: (id: string) => RentRecord | undefined;
   currentRecord: RentRecord | undefined; // most recent month — drives the dashboard
-  submitPayment: (id: string, input: SubmitPaymentInput) => void;
+  refresh: () => Promise<void>;
+  submitPayment: (id: string, receipt: File) => Promise<void>;
 }
 
 const TenantPaymentsContext = createContext<TenantPaymentsContextValue | null>(null);
 
-function todayLabel(): string {
-  return new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
 export function TenantPaymentsProvider({ children }: { children: ReactNode }) {
-  const [records, setRecords] = useState<RentRecord[]>(initialRecords);
+  const [records, setRecords] = useState<RentRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.get<{ payments: ApiRentPayment[] }>("/api/tenant/payments");
+      setRecords(data.payments.map(fromApi));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't load your payments.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const getRecord = (id: string) => records.find((r) => r.id === id);
   const currentRecord = records[0];
 
-  const submitPayment = (id: string, input: SubmitPaymentInput) => {
-    setRecords((prev) =>
-      prev.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              status: "PENDING",
-              submittedDate: todayLabel(),
-              method: input.method,
-              receiptFileName: input.receiptFileName,
-              note: input.note,
-            }
-          : r,
-      ),
-    );
+  const submitPayment = async (id: string, receipt: File) => {
+    const form = new FormData();
+    form.set("receipt", receipt);
+    const data = await api.postForm<{ payment: ApiRentPayment }>(`/api/tenant/payments/${id}/submit`, form);
+    const updated = fromApi(data.payment);
+    setRecords((prev) => prev.map((r) => (r.id === id ? updated : r)));
   };
 
   return (
-    <TenantPaymentsContext.Provider value={{ records, getRecord, currentRecord, submitPayment }}>
+    <TenantPaymentsContext.Provider
+      value={{ records, loading, error, getRecord, currentRecord, refresh, submitPayment }}
+    >
       {children}
     </TenantPaymentsContext.Provider>
   );
