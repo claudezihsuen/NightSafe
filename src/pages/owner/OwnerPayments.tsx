@@ -1,23 +1,52 @@
+import { useNavigate } from "react-router-dom";
+import { CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PaymentCard } from "@/components/PaymentCard";
-import type { PaymentStatus } from "@/types";
-
-const payments: { tenant: string; unit: string; amount: string; status: PaymentStatus }[] = [
-  { tenant: "Maria Lopez", unit: "Sagewood 2B", amount: "$1,200", status: "PAYMENT_CONFIRMED" },
-  { tenant: "James Okoro", unit: "Harbor View 5A", amount: "$1,450", status: "PENDING_REVIEW" },
-  { tenant: "Priya Nair", unit: "Willow Court 1", amount: "$980", status: "OVERDUE" },
-  { tenant: "Tom Becker", unit: "Sagewood 4A", amount: "$1,150", status: "WAITING_PAYMENT" },
-];
+import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { useOwnerPayments } from "@/lib/owner-payments-context";
+import { formatCents, formatMonth } from "@/lib/format";
 
 export function OwnerPayments() {
+  const navigate = useNavigate();
+  const { records, loading, error } = useOwnerPayments();
+
   return (
     <>
-      <PageHeader title="Payments" description="Rent payments across all properties." />
-      <div className="flex flex-col gap-3">
-        {payments.map((p) => (
-          <PaymentCard key={p.tenant} title={p.tenant} subtitle={p.unit} amount={p.amount} status={p.status} />
-        ))}
-      </div>
+      <PageHeader title="Payments" description="Rent payments awaiting your review." />
+
+      {loading && (
+        <div className="flex flex-col gap-3">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+      )}
+
+      {!loading && error && <p className="text-sm text-status-overdue">{error}</p>}
+
+      {!loading && !error && records.length === 0 && (
+        <EmptyState
+          icon={CheckCircle2}
+          title="Nothing to review"
+          description="Submitted rent payments will show up here for you to confirm or reject."
+        />
+      )}
+
+      {!loading && !error && records.length > 0 && (
+        <div className="flex flex-col gap-3">
+          {records.map((r) => (
+            <PaymentCard
+              key={r.id}
+              title={r.tenantName}
+              subtitle={`${r.propertyName} · ${r.unitLabel} · ${formatMonth(r.month)}`}
+              amount={formatCents(r.amountCents)}
+              status={r.status}
+              onClick={() => navigate(`/owner/payments/${r.id}`)}
+            />
+          ))}
+        </div>
+      )}
     </>
   );
 }
