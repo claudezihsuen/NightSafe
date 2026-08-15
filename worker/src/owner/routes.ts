@@ -1,7 +1,7 @@
 import type { Env, SessionUser } from "../types";
 import { getUserByEmail, getPropertyById, getUnitById, listOwnerPropertiesWithUnits } from "../db";
 import { generateToken, hashToken } from "../auth/session";
-export import { INVITE_TTL_MS } from "../auth/routes";
+import { INVITE_TTL_MS } from "../auth/routes";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
