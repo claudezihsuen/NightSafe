@@ -165,3 +165,142 @@ export async function createTenant(request: Request, env: Env, actor: SessionUse
     201,
   );
 }
+
+export interface OwnerPaymentReviewRow {
+  id: string;
+  lease_id: string;
+  month: string;
+  amount: number;
+  due_date: string;
+  status: "WAITING_PAYMENT" | "PENDING_REVIEW" | "PAYMENT_CONFIRMED";
+  receipt_key: string | null;
+  submitted_at: string | null;
+  payment_date: string | null;
+  tenant_id: string;
+  tenant_name: string;
+  property_name: string;
+  unit_label: string;
+}
+
+const SELECT_OWNER_PAYMENT = `
+  SELECT
+    rent_payments.*,
+    leases.tenant_id AS tenant_id,
+    tenant.name AS tenant_name,
+    properties.name AS property_name,
+    units.label AS unit_label
+  FROM rent_payments
+  JOIN leases ON leases.id = rent_payments.lease_id
+  JOIN units ON units.id = leases.unit_id
+  JOIN properties ON properties.id = units.property_id
+  JOIN users AS tenant ON tenant.id = leases.tenant_id
+  WHERE properties.owner_id = ?
+`;
+
+/** GET /api/owner/payments/pending — rent payments awaiting this Owner's review, oldest first. */
+export async function listPendingPayments(env: Env, actor: SessionUser): Promise<Response> {
+  const { results } = await env.DB.prepare(
+    `${SELECT_OWNER_PAYMENT} AND rent_payments.status = 'PENDING_REVIEW' ORDER BY rent_payments.submitted_at ASC`,
+  )
+    .bind(actor.id)
+    .all<OwnerPaymentReviewRow>();
+
+  return json({ payments: results ?? [] });
+}
+
+async function getOwnedReviewPayment(
+  env: Env,
+  actor: SessionUser,
+  paymentId: string,
+): Promise<OwnerPaymentReviewRow | null> {
+  const row = await env.DB.prepare(`${SELECT_OWNER_PAYMENT} AND rent_payments.id = ?`)
+    .bind(actor.id, paymentId)
+    .first<OwnerPaymentReviewRow>();
+  return row ?? null;
+}
+
+/** GET /api/owner/payments/:id — single payment, for the review detail screen. */
+export async function getPaymentForReview(env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
+  const payment = await getOwnedReviewPayment(env, actor, paymentId);
+  if (!payment) return json({ error: "Payment not found." }, 404);
+  return json({ payment });
+}
+
+/** GET /api/owner/payments/:id/receipt — streams the tenant's uploaded receipt, Owner-scoped. */
+export async function getPaymentReceipt(env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
+  const payment = await getOwnedReviewPayment(env, actor, paymentId);
+  if (!payment || !payment.receipt_key) {
+    return new Response("Not found.", { status: 404 });
+  }
+  const object = await env.FILES.get(payment.receipt_key);
+  if (!object) return new Response("Not found.", { status: 404 });
+
+  return new Response(object.body, {
+    headers: {
+      "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
+      "Cache-Control": "private, max-age=0",
+    },
+  });
+}
+
+/** POST /api/owner/payments/:id/confirm — PENDING_REVIEW -> PAYMENT_CONFIRMED. */
+export async function confirmPayment(env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
+  const payment = await getOwnedReviewPayment(env, actor, paymentId);
+  if (!payment) return json({ error: "Payment not found." }, 404);
+  if (payment.status !== "PENDING_REVIEW") {
+    return json({ error: "This payment isn't awaiting review." }, 409);
+  }
+
+  const now = new Date().toISOString();
+  const auditLogId = crypto.randomUUID();
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE rent_payments SET status = 'PAYMENT_CONFIRMED', payment_date = ?, reviewed_by = ? WHERE id = ?`,
+    ).bind(now, actor.id, payment.id),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+       VALUES (?, ?, 'RENT_PAYMENT_CONFIRMED', 'rent_payment', ?, ?)`,
+    ).bind(
+      auditLogId,
+      actor.id,
+      payment.id,
+      JSON.stringify({ tenantId: payment.tenant_id, leaseId: payment.lease_id, month: payment.month }),
+    ),
+  ]);
+
+  return json({ payment: { ...payment, status: "PAYMENT_CONFIRMED", payment_date: now } });
+}
+
+/** POST /api/owner/payments/:id/reject — PENDING_REVIEW -> WAITING_PAYMENT. Body: { reason?: string } optional. */
+export async function rejectPayment(request: Request, env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
+  const payment = await getOwnedReviewPayment(env, actor, paymentId);
+  if (!payment) return json({ error: "Payment not found." }, 404);
+  if (payment.status !== "PENDING_REVIEW") {
+    return json({ error: "This payment isn't awaiting review." }, 409);
+  }
+
+  const body = await request.json().catch(() => null);
+  const reason = typeof body?.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
+
+  const auditLogId = crypto.randomUUID();
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE rent_payments SET status = 'WAITING_PAYMENT', receipt_key = NULL, submitted_at = NULL WHERE id = ?`,
+    ).bind(payment.id),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+       VALUES (?, ?, 'RENT_PAYMENT_REJECTED', 'rent_payment', ?, ?)`,
+    ).bind(
+      auditLogId,
+      actor.id,
+      payment.id,
+      JSON.stringify({ tenantId: payment.tenant_id, leaseId: payment.lease_id, month: payment.month, reason }),
+    ),
+  ]);
+
+  return json({
+    payment: { ...payment, status: "WAITING_PAYMENT", receipt_key: null, submitted_at: null },
+  });
+}
