@@ -1,26 +1,47 @@
+import { Link } from "react-router-dom";
+import { Users } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { TenantCard } from "@/components/TenantCard";
-
-const tenants = [
-  { name: "Maria Lopez", unitLabel: "Sagewood 2B" },
-  { name: "Tom Becker", unitLabel: "Sagewood 4A" },
-  { name: "Priya Nair", unitLabel: "Willow Court 1", isUnitLeader: true },
-];
+import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { useAgentData } from "@/lib/agent-context";
 
 export function AgentTenants() {
+  const { tenants, loading, error } = useAgentData();
+
   return (
     <>
       <PageHeader
         title="Tenants"
         description="Tenants within your assigned scope."
-        action={<Button size="sm">Add tenant</Button>}
+        action={
+          <Link to="/agent/tenants/new">
+            <Button size="sm">Add tenant</Button>
+          </Link>
+        }
       />
-      <div className="flex flex-col gap-3">
-        {tenants.map((t) => (
-          <TenantCard key={t.name} {...t} />
-        ))}
-      </div>
+
+      {loading && (
+        <div className="flex flex-col gap-3">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      )}
+
+      {!loading && error && <p className="text-sm text-status-overdue">{error}</p>}
+
+      {!loading && !error && tenants.length === 0 && (
+        <EmptyState icon={Users} title="No tenants yet" description="Tenants you add will appear here." />
+      )}
+
+      {!loading && !error && tenants.length > 0 && (
+        <div className="flex flex-col gap-3">
+          {tenants.map((t) => (
+            <TenantCard key={t.id} name={t.name} unitLabel={`${t.propertyName} · ${t.unitLabel}`} />
+          ))}
+        </div>
+      )}
     </>
   );
 }
