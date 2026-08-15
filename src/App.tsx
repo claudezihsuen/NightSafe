@@ -11,6 +11,9 @@ import { OwnerDashboard } from "@/pages/owner/OwnerDashboard";
 import { OwnerProperties } from "@/pages/owner/OwnerProperties";
 import { OwnerPeople } from "@/pages/owner/OwnerPeople";
 import { OwnerCreateTenant } from "@/pages/owner/OwnerCreateTenant";
+import { OwnerCreateAgent } from "@/pages/owner/OwnerCreateAgent";
+import { OwnerAgentDetail } from "@/pages/owner/OwnerAgentDetail";
+import { OwnerAgentsProvider } from "@/lib/owner-agents-context";
 import { OwnerPayments } from "@/pages/owner/OwnerPayments";
 import { OwnerPaymentReview } from "@/pages/owner/OwnerPaymentReview";
 import { OwnerPaymentsProvider } from "@/lib/owner-payments-context";
@@ -20,7 +23,9 @@ import { AgentLayout } from "@/layouts/AgentLayout";
 import { AgentDashboard } from "@/pages/agent/AgentDashboard";
 import { AgentProperties } from "@/pages/agent/AgentProperties";
 import { AgentTenants } from "@/pages/agent/AgentTenants";
+import { AgentCreateTenant } from "@/pages/agent/AgentCreateTenant";
 import { AgentPayments } from "@/pages/agent/AgentPayments";
+import { AgentDataProvider } from "@/lib/agent-context";
 
 import { UnitLeaderLayout } from "@/layouts/UnitLeaderLayout";
 import { UnitLeaderDashboard } from "@/pages/unit-leader/UnitLeaderDashboard";
@@ -49,7 +54,9 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={["OWNER"]}>
               <OwnerPaymentsProvider>
-                <OwnerLayout />
+                <OwnerAgentsProvider>
+                  <OwnerLayout />
+                </OwnerAgentsProvider>
               </OwnerPaymentsProvider>
             </ProtectedRoute>
           }
@@ -58,6 +65,8 @@ export default function App() {
           <Route path="properties" element={<OwnerProperties />} />
           <Route path="people" element={<OwnerPeople />} />
           <Route path="people/new" element={<OwnerCreateTenant />} />
+          <Route path="agents/new" element={<OwnerCreateAgent />} />
+          <Route path="agents/:id" element={<OwnerAgentDetail />} />
           <Route path="payments" element={<OwnerPayments />} />
           <Route path="payments/:id" element={<OwnerPaymentReview />} />
           <Route path="agreements" element={<OwnerAgreements />} />
@@ -67,13 +76,16 @@ export default function App() {
           path="/agent"
           element={
             <ProtectedRoute allowedRoles={["AGENT"]}>
-              <AgentLayout />
+              <AgentDataProvider>
+                <AgentLayout />
+              </AgentDataProvider>
             </ProtectedRoute>
           }
         >
           <Route index element={<AgentDashboard />} />
           <Route path="properties" element={<AgentProperties />} />
           <Route path="tenants" element={<AgentTenants />} />
+          <Route path="tenants/new" element={<AgentCreateTenant />} />
           <Route path="payments" element={<AgentPayments />} />
         </Route>
 
