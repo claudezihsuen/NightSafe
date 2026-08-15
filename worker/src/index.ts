@@ -2,7 +2,15 @@ import type { Env } from "./types";
 import { corsHeaders, withCors } from "./cors";
 import { resolveSession, requireRole } from "./middleware/requireAuth";
 import { login, logout, me, getInvite, activate } from "./auth/routes";
-import { listProperties, createTenant } from "./owner/routes";
+import {
+  listProperties,
+  createTenant,
+  listPendingPayments,
+  getPaymentForReview,
+  getPaymentReceipt,
+  confirmPayment,
+  rejectPayment,
+} from "./owner/routes";
 import { listPayments, getPayment, submitPayment, getReceipt } from "./tenant/routes";
 
 function json(data: unknown, status = 200): Response {
@@ -15,6 +23,11 @@ function json(data: unknown, status = 200): Response {
 const TENANT_PAYMENT_ID = /^\/api\/tenant\/payments\/([^/]+)$/;
 const TENANT_PAYMENT_SUBMIT = /^\/api\/tenant\/payments\/([^/]+)\/submit$/;
 const TENANT_PAYMENT_RECEIPT = /^\/api\/tenant\/payments\/([^/]+)\/receipt$/;
+
+const OWNER_PAYMENT_ID = /^\/api\/owner\/payments\/([^/]+)$/;
+const OWNER_PAYMENT_RECEIPT = /^\/api\/owner\/payments\/([^/]+)\/receipt$/;
+const OWNER_PAYMENT_CONFIRM = /^\/api\/owner\/payments\/([^/]+)\/confirm$/;
+const OWNER_PAYMENT_REJECT = /^\/api\/owner\/payments\/([^/]+)\/reject$/;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -55,6 +68,45 @@ export default {
           response = json({ error: "Not authorized." }, 403);
         } else {
           response = await createTenant(request, env, sessionUser!);
+        }
+      } else if (pathname === "/api/owner/payments/pending" && method === "GET") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          response = await listPendingPayments(env, sessionUser!);
+        }
+      } else if (OWNER_PAYMENT_RECEIPT.test(pathname) && method === "GET") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = new Response("Not authorized.", { status: 403 });
+        } else {
+          const [, id] = pathname.match(OWNER_PAYMENT_RECEIPT)!;
+          response = await getPaymentReceipt(env, sessionUser!, id);
+        }
+      } else if (OWNER_PAYMENT_CONFIRM.test(pathname) && method === "POST") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          const [, id] = pathname.match(OWNER_PAYMENT_CONFIRM)!;
+          response = await confirmPayment(env, sessionUser!, id);
+        }
+      } else if (OWNER_PAYMENT_REJECT.test(pathname) && method === "POST") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          const [, id] = pathname.match(OWNER_PAYMENT_REJECT)!;
+          response = await rejectPayment(request, env, sessionUser!, id);
+        }
+      } else if (OWNER_PAYMENT_ID.test(pathname) && method === "GET") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          const [, id] = pathname.match(OWNER_PAYMENT_ID)!;
+          response = await getPaymentForReview(env, sessionUser!, id);
         }
       } else if (pathname === "/api/tenant/payments" && method === "GET") {
         const sessionUser = await resolveSession(request, env);
