@@ -10,7 +10,10 @@ import { OwnerLayout } from "@/layouts/OwnerLayout";
 import { OwnerDashboard } from "@/pages/owner/OwnerDashboard";
 import { OwnerProperties } from "@/pages/owner/OwnerProperties";
 import { OwnerPeople } from "@/pages/owner/OwnerPeople";
+import { OwnerCreateTenant } from "@/pages/owner/OwnerCreateTenant";
 import { OwnerPayments } from "@/pages/owner/OwnerPayments";
+import { OwnerPaymentReview } from "@/pages/owner/OwnerPaymentReview";
+import { OwnerPaymentsProvider } from "@/lib/owner-payments-context";
 import { OwnerAgreements } from "@/pages/owner/OwnerAgreements";
 
 import { AgentLayout } from "@/layouts/AgentLayout";
@@ -45,14 +48,18 @@ export default function App() {
           path="/owner"
           element={
             <ProtectedRoute allowedRoles={["OWNER"]}>
-              <OwnerLayout />
+              <OwnerPaymentsProvider>
+                <OwnerLayout />
+              </OwnerPaymentsProvider>
             </ProtectedRoute>
           }
         >
           <Route index element={<OwnerDashboard />} />
           <Route path="properties" element={<OwnerProperties />} />
           <Route path="people" element={<OwnerPeople />} />
+          <Route path="people/new" element={<OwnerCreateTenant />} />
           <Route path="payments" element={<OwnerPayments />} />
+          <Route path="payments/:id" element={<OwnerPaymentReview />} />
           <Route path="agreements" element={<OwnerAgreements />} />
         </Route>
 
@@ -96,8 +103,8 @@ export default function App() {
         >
           <Route index element={<TenantHome />} />
           <Route path="payments" element={<TenantPayments />} />
-          <Route path="payments/:month" element={<TenantPaymentDetails />} />
-          <Route path="payments/:month/pay" element={<TenantMakePayment />} />
+          <Route path="payments/:id" element={<TenantPaymentDetails />} />
+          <Route path="payments/:id/pay" element={<TenantMakePayment />} />
           <Route path="agreement" element={<TenantAgreement />} />
           <Route path="notifications" element={<TenantNotifications />} />
         </Route>
