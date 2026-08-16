@@ -2,6 +2,7 @@ import type { Env, SessionUser } from "../types";
 import { getPropertyById, getUnitById } from "../db";
 import { createTenantForActor } from "../shared/tenant-creation";
 import type { ScopeCheck } from "../shared/tenant-creation";
+import { confirmPaymentCore, rejectPaymentCore, streamReceipt } from "../shared/payment-review";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -123,4 +124,96 @@ export async function createTenant(request: Request, env: Env, actor: SessionUse
   };
 
   return createTenantForActor(request, env, actor, verifyScope, "TENANT_CREATED_BY_AGENT");
+}
+
+export interface AgentPaymentReviewRow {
+  id: string;
+  lease_id: string;
+  month: string;
+  amount: number;
+  due_date: string;
+  status: "WAITING_PAYMENT" | "PENDING_REVIEW" | "PAYMENT_CONFIRMED";
+  receipt_key: string | null;
+  submitted_at: string | null;
+  payment_date: string | null;
+  tenant_id: string;
+  tenant_name: string;
+  property_name: string;
+  unit_label: string;
+}
+
+/**
+ * Rent payments on units this Agent is assigned to. Deliberately selects
+ * only the columns needed for review — no property-wide financial totals,
+ * so there's nothing here for an Agent to aggregate into "global revenue".
+ */
+async function selectAgentPayments(
+  env: Env,
+  actor: SessionUser,
+  extraWhere: string,
+  extraParams: unknown[] = [],
+): Promise<AgentPaymentReviewRow[]> {
+  const unitIds = await getAssignedUnitIds(env, actor.id);
+  if (unitIds.size === 0) return [];
+
+  const placeholders = [...unitIds].map(() => "?").join(",");
+  const { results } = await env.DB.prepare(
+    `SELECT
+       rent_payments.id, rent_payments.lease_id, rent_payments.month, rent_payments.amount,
+       rent_payments.due_date, rent_payments.status, rent_payments.receipt_key,
+       rent_payments.submitted_at, rent_payments.payment_date,
+       leases.tenant_id AS tenant_id,
+       tenant.name AS tenant_name,
+       properties.name AS property_name,
+       units.label AS unit_label
+     FROM rent_payments
+     JOIN leases ON leases.id = rent_payments.lease_id
+     JOIN units ON units.id = leases.unit_id
+     JOIN properties ON properties.id = units.property_id
+     JOIN users AS tenant ON tenant.id = leases.tenant_id
+     WHERE leases.unit_id IN (${placeholders}) ${extraWhere}`,
+  )
+    .bind(...unitIds, ...extraParams)
+    .all<AgentPaymentReviewRow>();
+
+  return results ?? [];
+}
+
+/** GET /api/agent/payments/pending — payments awaiting review on this Agent's assigned units. */
+export async function listPendingPayments(env: Env, actor: SessionUser): Promise<Response> {
+  const payments = await selectAgentPayments(
+    env,
+    actor,
+    "AND rent_payments.status = 'PENDING_REVIEW' ORDER BY rent_payments.submitted_at ASC",
+  );
+  return json({ payments });
+}
+
+async function getAssignedPayment(env: Env, actor: SessionUser, paymentId: string): Promise<AgentPaymentReviewRow | null> {
+  const rows = await selectAgentPayments(env, actor, "AND rent_payments.id = ?", [paymentId]);
+  return rows[0] ?? null;
+}
+
+/** GET /api/agent/payments/:id */
+export async function getPaymentForReview(env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
+  const payment = await getAssignedPayment(env, actor, paymentId);
+  if (!payment) return json({ error: "Payment not found." }, 404);
+  return json({ payment });
+}
+
+/** GET /api/agent/payments/:id/receipt */
+export async function getPaymentReceipt(env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
+  const payment = await getAssignedPayment(env, actor, paymentId);
+  if (!payment) return new Response("Not found.", { status: 404 });
+  return streamReceipt(env, payment);
+}
+
+/** POST /api/agent/payments/:id/confirm — PENDING_REVIEW -> PAYMENT_CONFIRMED. */
+export async function confirmPayment(env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
+  return confirmPaymentCore(env, actor, paymentId, "AGENT", getAssignedPayment);
+}
+
+/** POST /api/agent/payments/:id/reject — PENDING_REVIEW -> WAITING_PAYMENT. */
+export async function rejectPayment(request: Request, env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
+  return rejectPaymentCore(request, env, actor, paymentId, "AGENT", getAssignedPayment);
 }
