@@ -4,6 +4,7 @@ import { generateToken, hashToken } from "../auth/session";
 import { INVITE_TTL_MS } from "../auth/routes";
 import { createTenantForActor } from "../shared/tenant-creation";
 import type { ScopeCheck } from "../shared/tenant-creation";
+import { confirmPaymentCore, rejectPaymentCore, streamReceipt } from "../shared/payment-review";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -303,78 +304,47 @@ export async function getPaymentForReview(env: Env, actor: SessionUser, paymentI
 /** GET /api/owner/payments/:id/receipt — streams the tenant's uploaded receipt, Owner-scoped. */
 export async function getPaymentReceipt(env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
   const payment = await getOwnedReviewPayment(env, actor, paymentId);
-  if (!payment || !payment.receipt_key) {
-    return new Response("Not found.", { status: 404 });
-  }
-  const object = await env.FILES.get(payment.receipt_key);
-  if (!object) return new Response("Not found.", { status: 404 });
-
-  return new Response(object.body, {
-    headers: {
-      "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
-      "Cache-Control": "private, max-age=0",
-    },
-  });
+  if (!payment) return new Response("Not found.", { status: 404 });
+  return streamReceipt(env, payment);
 }
 
 /** POST /api/owner/payments/:id/confirm — PENDING_REVIEW -> PAYMENT_CONFIRMED. */
 export async function confirmPayment(env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
-  const payment = await getOwnedReviewPayment(env, actor, paymentId);
-  if (!payment) return json({ error: "Payment not found." }, 404);
-  if (payment.status !== "PENDING_REVIEW") {
-    return json({ error: "This payment isn't awaiting review." }, 409);
-  }
-
-  const now = new Date().toISOString();
-  const auditLogId = crypto.randomUUID();
-
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE rent_payments SET status = 'PAYMENT_CONFIRMED', payment_date = ?, reviewed_by = ? WHERE id = ?`,
-    ).bind(now, actor.id, payment.id),
-    env.DB.prepare(
-      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
-       VALUES (?, ?, 'RENT_PAYMENT_CONFIRMED', 'rent_payment', ?, ?)`,
-    ).bind(
-      auditLogId,
-      actor.id,
-      payment.id,
-      JSON.stringify({ tenantId: payment.tenant_id, leaseId: payment.lease_id, month: payment.month }),
-    ),
-  ]);
-
-  return json({ payment: { ...payment, status: "PAYMENT_CONFIRMED", payment_date: now } });
+  return confirmPaymentCore(env, actor, paymentId, "OWNER", getOwnedReviewPayment);
 }
 
 /** POST /api/owner/payments/:id/reject — PENDING_REVIEW -> WAITING_PAYMENT. Body: { reason?: string } optional. */
 export async function rejectPayment(request: Request, env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
+  return rejectPaymentCore(request, env, actor, paymentId, "OWNER", getOwnedReviewPayment);
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  metadata: string | null;
+  created_at: string;
+  actor_name: string;
+  actor_role: string;
+}
+
+/** GET /api/owner/payments/:id/audit — this payment's review history, Owner-scoped. */
+export async function getPaymentAuditLog(env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
   const payment = await getOwnedReviewPayment(env, actor, paymentId);
   if (!payment) return json({ error: "Payment not found." }, 404);
-  if (payment.status !== "PENDING_REVIEW") {
-    return json({ error: "This payment isn't awaiting review." }, 409);
-  }
 
-  const body = await request.json().catch(() => null);
-  const reason = typeof body?.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
+  const { results } = await env.DB.prepare(
+    `SELECT audit_logs.id, audit_logs.action, audit_logs.entity_type, audit_logs.entity_id,
+            audit_logs.metadata, audit_logs.created_at,
+            actor.name AS actor_name, actor.role AS actor_role
+     FROM audit_logs
+     JOIN users AS actor ON actor.id = audit_logs.user_id
+     WHERE audit_logs.entity_type = 'rent_payment' AND audit_logs.entity_id = ?
+     ORDER BY audit_logs.created_at DESC`,
+  )
+    .bind(paymentId)
+    .all<AuditLogEntry>();
 
-  const auditLogId = crypto.randomUUID();
-
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE rent_payments SET status = 'WAITING_PAYMENT', receipt_key = NULL, submitted_at = NULL WHERE id = ?`,
-    ).bind(payment.id),
-    env.DB.prepare(
-      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
-       VALUES (?, ?, 'RENT_PAYMENT_REJECTED', 'rent_payment', ?, ?)`,
-    ).bind(
-      auditLogId,
-      actor.id,
-      payment.id,
-      JSON.stringify({ tenantId: payment.tenant_id, leaseId: payment.lease_id, month: payment.month, reason }),
-    ),
-  ]);
-
-  return json({
-    payment: { ...payment, status: "WAITING_PAYMENT", receipt_key: null, submitted_at: null },
-  });
+  return json({ entries: results ?? [] });
 }
