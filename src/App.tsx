@@ -25,7 +25,9 @@ import { AgentProperties } from "@/pages/agent/AgentProperties";
 import { AgentTenants } from "@/pages/agent/AgentTenants";
 import { AgentCreateTenant } from "@/pages/agent/AgentCreateTenant";
 import { AgentPayments } from "@/pages/agent/AgentPayments";
+import { AgentPaymentReview } from "@/pages/agent/AgentPaymentReview";
 import { AgentDataProvider } from "@/lib/agent-context";
+import { AgentPaymentsProvider } from "@/lib/agent-payments-context";
 
 import { UnitLeaderLayout } from "@/layouts/UnitLeaderLayout";
 import { UnitLeaderDashboard } from "@/pages/unit-leader/UnitLeaderDashboard";
@@ -77,7 +79,9 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={["AGENT"]}>
               <AgentDataProvider>
-                <AgentLayout />
+                <AgentPaymentsProvider>
+                  <AgentLayout />
+                </AgentPaymentsProvider>
               </AgentDataProvider>
             </ProtectedRoute>
           }
@@ -87,6 +91,7 @@ export default function App() {
           <Route path="tenants" element={<AgentTenants />} />
           <Route path="tenants/new" element={<AgentCreateTenant />} />
           <Route path="payments" element={<AgentPayments />} />
+          <Route path="payments/:id" element={<AgentPaymentReview />} />
         </Route>
 
         <Route
