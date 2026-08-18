@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { UserPlus } from "lucide-react";
+import { UserPlus, Users } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -8,14 +8,20 @@ import { TenantCard } from "@/components/TenantCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { cn } from "@/lib/utils";
+import { api, ApiError } from "@/lib/api";
 import { useOwnerAgents } from "@/lib/owner-agents-context";
 
-const tenants = [
-  { name: "Maria Lopez", unitLabel: "Sagewood 2B" },
-  { name: "James Okoro", unitLabel: "Harbor View 5A", isUnitLeader: true },
-  { name: "Priya Nair", unitLabel: "Willow Court 1" },
-  { name: "Tom Becker", unitLabel: "Sagewood 4A" },
-];
+interface OwnerTenant {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  status: string;
+  lease_id: string;
+  is_unit_leader: number;
+  property_name: string;
+  unit_label: string;
+}
 
 const statusLabel: Record<string, string> = {
   ACTIVE: "Active",
@@ -28,6 +34,60 @@ const statusClasses: Record<string, string> = {
   WAITING_FOR_ACTIVATION: "bg-status-waiting/10 text-status-waiting",
   INACTIVE: "bg-status-overdue/10 text-status-overdue",
 };
+
+function TenantsTab() {
+  const [tenants, setTenants] = useState<OwnerTenant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .get<{ tenants: OwnerTenant[] }>("/api/owner/tenants")
+      .then((data) => setTenants(data.tenants))
+      .catch((err) => setError(err instanceof ApiError ? err.message : "Couldn't load tenants."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-16 w-full" />
+      </div>
+    );
+  }
+
+  if (error) return <p className="text-sm text-status-overdue">{error}</p>;
+
+  if (tenants.length === 0) {
+    return (
+      <EmptyState
+        icon={Users}
+        title="No tenants yet"
+        description="Tenants you create will appear here."
+        action={
+          <Link to="/owner/people/new">
+            <Button size="sm">Add tenant</Button>
+          </Link>
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {tenants.map((t) => (
+        <Link key={t.id} to={`/owner/leases/${t.lease_id}/deposit`}>
+          <TenantCard
+            name={t.name}
+            unitLabel={`${t.property_name} · ${t.unit_label}`}
+            isUnitLeader={Boolean(t.is_unit_leader)}
+          />
+        </Link>
+      ))}
+    </div>
+  );
+}
 
 function AgentsTab() {
   const { agents, loading, error } = useOwnerAgents();
@@ -116,15 +176,7 @@ export function OwnerPeople() {
         ))}
       </div>
 
-      {tab === "tenants" ? (
-        <div className="flex flex-col gap-3">
-          {tenants.map((p) => (
-            <TenantCard key={p.name} {...p} />
-          ))}
-        </div>
-      ) : (
-        <AgentsTab />
-      )}
+      {tab === "tenants" ? <TenantsTab /> : <AgentsTab />}
     </>
   );
 }

@@ -1,28 +1,44 @@
+import { Droplets } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PaymentCard } from "@/components/PaymentCard";
-import type { PaymentStatus, UtilityType } from "@/types";
-
-const history: { type: UtilityType; month: string; amount: string; status: PaymentStatus }[] = [
-  { type: "WATER", month: "July", amount: "$30.00", status: "PAYMENT_CONFIRMED" },
-  { type: "ELECTRICITY", month: "July", amount: "$49.00", status: "PAYMENT_CONFIRMED" },
-  { type: "WATER", month: "June", amount: "$28.00", status: "PAYMENT_CONFIRMED" },
-];
+import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { useUnitLeader } from "@/lib/unit-leader-context";
+import { formatCents, formatMonth } from "@/lib/format";
 
 export function UnitLeaderHistory() {
+  const { utilities, loading, error } = useUnitLeader();
+
   return (
     <>
       <PageHeader title="History" description="Past water and electricity payments." />
-      <div className="flex flex-col gap-3">
-        {history.map((h, i) => (
-          <PaymentCard
-            key={i}
-            title={h.type === "WATER" ? "Water" : "Electricity"}
-            subtitle={h.month}
-            amount={h.amount}
-            status={h.status}
-          />
-        ))}
-      </div>
+
+      {loading && (
+        <div className="flex flex-col gap-3">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      )}
+
+      {!loading && error && <p className="text-sm text-status-overdue">{error}</p>}
+
+      {!loading && !error && utilities.length === 0 && (
+        <EmptyState icon={Droplets} title="No payments yet" description="Water and electricity payments you submit will appear here." />
+      )}
+
+      {!loading && !error && utilities.length > 0 && (
+        <div className="flex flex-col gap-3">
+          {utilities.map((u) => (
+            <PaymentCard
+              key={u.id}
+              title={u.type === "WATER" ? "Water" : "Electricity"}
+              subtitle={formatMonth(u.month)}
+              amount={formatCents(u.amountCents)}
+              status={u.status}
+            />
+          ))}
+        </div>
+      )}
     </>
   );
 }

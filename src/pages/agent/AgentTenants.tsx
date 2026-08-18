@@ -38,7 +38,9 @@ export function AgentTenants() {
       {!loading && !error && tenants.length > 0 && (
         <div className="flex flex-col gap-3">
           {tenants.map((t) => (
-            <TenantCard key={t.id} name={t.name} unitLabel={`${t.propertyName} · ${t.unitLabel}`} />
+            <Link key={t.id} to={`/agent/leases/${t.leaseId}/deposit`}>
+              <TenantCard name={t.name} unitLabel={`${t.propertyName} · ${t.unitLabel}`} />
+            </Link>
           ))}
         </div>
       )}

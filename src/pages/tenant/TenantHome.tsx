@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Bell, ChevronRight, FileText, History, Wallet } from "lucide-react";
+import { Bell, ChevronRight, FileText, History, ShieldCheck, Wallet } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { HeroCard } from "@/components/HeroCard";
 import { UnitCard } from "@/components/UnitCard";
@@ -12,6 +12,7 @@ import { formatCents, formatDate, formatMonth } from "@/lib/format";
 
 const quickActions = [
   { label: "Payment history", description: "See all past months", icon: History, to: "/tenant/payments" },
+  { label: "Deposit", description: "View your deposit breakdown", icon: ShieldCheck, to: "/tenant/deposit" },
   { label: "Agreement", description: "View your lease", icon: FileText, to: "/tenant/agreement" },
   { label: "Notifications", description: "Updates & reminders", icon: Bell, to: "/tenant/notifications" },
 ];

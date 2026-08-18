@@ -9,6 +9,7 @@ export interface AgentTenant {
   email: string;
   phone: string | null;
   status: string;
+  leaseId: string;
   propertyName: string;
   unitLabel: string;
 }
@@ -19,6 +20,7 @@ interface ApiAgentTenant {
   email: string;
   phone: string | null;
   status: string;
+  lease_id: string;
   property_name: string;
   unit_label: string;
 }
@@ -55,6 +57,7 @@ export function AgentDataProvider({ children }: { children: ReactNode }) {
           email: t.email,
           phone: t.phone,
           status: t.status,
+          leaseId: t.lease_id,
           propertyName: t.property_name,
           unitLabel: t.unit_label,
         })),

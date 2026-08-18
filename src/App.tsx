@@ -17,6 +17,9 @@ import { OwnerAgentsProvider } from "@/lib/owner-agents-context";
 import { OwnerPayments } from "@/pages/owner/OwnerPayments";
 import { OwnerPaymentReview } from "@/pages/owner/OwnerPaymentReview";
 import { OwnerPaymentsProvider } from "@/lib/owner-payments-context";
+import { OwnerUtilityReview } from "@/pages/owner/OwnerUtilityReview";
+import { OwnerUtilitiesProvider } from "@/lib/owner-utilities-context";
+import { OwnerDepositManagement } from "@/pages/owner/OwnerDepositManagement";
 import { OwnerAgreements } from "@/pages/owner/OwnerAgreements";
 
 import { AgentLayout } from "@/layouts/AgentLayout";
@@ -28,12 +31,16 @@ import { AgentPayments } from "@/pages/agent/AgentPayments";
 import { AgentPaymentReview } from "@/pages/agent/AgentPaymentReview";
 import { AgentDataProvider } from "@/lib/agent-context";
 import { AgentPaymentsProvider } from "@/lib/agent-payments-context";
+import { AgentUtilityReview } from "@/pages/agent/AgentUtilityReview";
+import { AgentUtilitiesProvider } from "@/lib/agent-utilities-context";
+import { AgentDepositManagement } from "@/pages/agent/AgentDepositManagement";
 
 import { UnitLeaderLayout } from "@/layouts/UnitLeaderLayout";
 import { UnitLeaderDashboard } from "@/pages/unit-leader/UnitLeaderDashboard";
 import { UnitLeaderWater } from "@/pages/unit-leader/UnitLeaderWater";
 import { UnitLeaderElectricity } from "@/pages/unit-leader/UnitLeaderElectricity";
 import { UnitLeaderHistory } from "@/pages/unit-leader/UnitLeaderHistory";
+import { UnitLeaderProvider } from "@/lib/unit-leader-context";
 
 import { TenantLayout } from "@/layouts/TenantLayout";
 import { TenantHome } from "@/pages/tenant/TenantHome";
@@ -41,6 +48,7 @@ import { TenantPayments } from "@/pages/tenant/TenantPayments";
 import { TenantPaymentDetails } from "@/pages/tenant/TenantPaymentDetails";
 import { TenantMakePayment } from "@/pages/tenant/TenantMakePayment";
 import { TenantAgreement } from "@/pages/tenant/TenantAgreement";
+import { TenantDeposit } from "@/pages/tenant/TenantDeposit";
 import { TenantNotifications } from "@/pages/tenant/TenantNotifications";
 import { TenantPaymentsProvider } from "@/lib/tenant-payments-context";
 
@@ -56,9 +64,11 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={["OWNER"]}>
               <OwnerPaymentsProvider>
-                <OwnerAgentsProvider>
-                  <OwnerLayout />
-                </OwnerAgentsProvider>
+                <OwnerUtilitiesProvider>
+                  <OwnerAgentsProvider>
+                    <OwnerLayout />
+                  </OwnerAgentsProvider>
+                </OwnerUtilitiesProvider>
               </OwnerPaymentsProvider>
             </ProtectedRoute>
           }
@@ -71,6 +81,8 @@ export default function App() {
           <Route path="agents/:id" element={<OwnerAgentDetail />} />
           <Route path="payments" element={<OwnerPayments />} />
           <Route path="payments/:id" element={<OwnerPaymentReview />} />
+          <Route path="utilities/:id" element={<OwnerUtilityReview />} />
+          <Route path="leases/:leaseId/deposit" element={<OwnerDepositManagement />} />
           <Route path="agreements" element={<OwnerAgreements />} />
         </Route>
 
@@ -80,7 +92,9 @@ export default function App() {
             <ProtectedRoute allowedRoles={["AGENT"]}>
               <AgentDataProvider>
                 <AgentPaymentsProvider>
-                  <AgentLayout />
+                  <AgentUtilitiesProvider>
+                    <AgentLayout />
+                  </AgentUtilitiesProvider>
                 </AgentPaymentsProvider>
               </AgentDataProvider>
             </ProtectedRoute>
@@ -92,13 +106,17 @@ export default function App() {
           <Route path="tenants/new" element={<AgentCreateTenant />} />
           <Route path="payments" element={<AgentPayments />} />
           <Route path="payments/:id" element={<AgentPaymentReview />} />
+          <Route path="utilities/:id" element={<AgentUtilityReview />} />
+          <Route path="leases/:leaseId/deposit" element={<AgentDepositManagement />} />
         </Route>
 
         <Route
           path="/unit-leader"
           element={
             <ProtectedRoute allowedRoles={["UNIT_LEADER"]}>
-              <UnitLeaderLayout />
+              <UnitLeaderProvider>
+                <UnitLeaderLayout />
+              </UnitLeaderProvider>
             </ProtectedRoute>
           }
         >
@@ -123,6 +141,7 @@ export default function App() {
           <Route path="payments/:id" element={<TenantPaymentDetails />} />
           <Route path="payments/:id/pay" element={<TenantMakePayment />} />
           <Route path="agreement" element={<TenantAgreement />} />
+          <Route path="deposit" element={<TenantDeposit />} />
           <Route path="notifications" element={<TenantNotifications />} />
         </Route>
 

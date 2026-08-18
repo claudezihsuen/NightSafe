@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -5,48 +6,109 @@ import { PaymentCard } from "@/components/PaymentCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useOwnerPayments } from "@/lib/owner-payments-context";
+import { useOwnerUtilities } from "@/lib/owner-utilities-context";
 import { formatCents, formatMonth } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
-export function OwnerPayments() {
+function RentTab() {
   const navigate = useNavigate();
   const { records, loading, error } = useOwnerPayments();
 
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+      </div>
+    );
+  }
+  if (error) return <p className="text-sm text-status-overdue">{error}</p>;
+  if (records.length === 0) {
+    return (
+      <EmptyState
+        icon={CheckCircle2}
+        title="Nothing to review"
+        description="Submitted rent payments will show up here for you to confirm or reject."
+      />
+    );
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      {records.map((r) => (
+        <PaymentCard
+          key={r.id}
+          title={r.tenantName}
+          subtitle={`${r.propertyName} · ${r.unitLabel} · ${formatMonth(r.month)}`}
+          amount={formatCents(r.amountCents)}
+          status={r.status}
+          onClick={() => navigate(`/owner/payments/${r.id}`)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function UtilitiesTab() {
+  const navigate = useNavigate();
+  const { records, loading, error } = useOwnerUtilities();
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+      </div>
+    );
+  }
+  if (error) return <p className="text-sm text-status-overdue">{error}</p>;
+  if (records.length === 0) {
+    return (
+      <EmptyState
+        icon={CheckCircle2}
+        title="Nothing to review"
+        description="Submitted water and electricity payments will show up here."
+      />
+    );
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      {records.map((r) => (
+        <PaymentCard
+          key={r.id}
+          title={r.type === "WATER" ? "Water" : "Electricity"}
+          subtitle={`${r.propertyName} · ${r.unitLabel} · ${formatMonth(r.month)}`}
+          amount={formatCents(r.amountCents)}
+          status={r.status}
+          onClick={() => navigate(`/owner/utilities/${r.id}`)}
+        />
+      ))}
+    </div>
+  );
+}
+
+export function OwnerPayments() {
+  const [tab, setTab] = useState<"rent" | "utilities">("rent");
+
   return (
     <>
-      <PageHeader title="Payments" description="Rent payments awaiting your review." />
+      <PageHeader title="Payments" description="Rent and utility payments awaiting your review." />
 
-      {loading && (
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-        </div>
-      )}
+      <div className="mb-5 inline-flex rounded-input bg-sage-50 p-1">
+        {(["rent", "utilities"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={cn(
+              "rounded-input px-4 py-1.5 text-sm font-medium capitalize transition-colors",
+              tab === t ? "bg-white text-ink shadow-subtle" : "text-ink/60",
+            )}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
 
-      {!loading && error && <p className="text-sm text-status-overdue">{error}</p>}
-
-      {!loading && !error && records.length === 0 && (
-        <EmptyState
-          icon={CheckCircle2}
-          title="Nothing to review"
-          description="Submitted rent payments will show up here for you to confirm or reject."
-        />
-      )}
-
-      {!loading && !error && records.length > 0 && (
-        <div className="flex flex-col gap-3">
-          {records.map((r) => (
-            <PaymentCard
-              key={r.id}
-              title={r.tenantName}
-              subtitle={`${r.propertyName} · ${r.unitLabel} · ${formatMonth(r.month)}`}
-              amount={formatCents(r.amountCents)}
-              status={r.status}
-              onClick={() => navigate(`/owner/payments/${r.id}`)}
-            />
-          ))}
-        </div>
-      )}
+      {tab === "rent" ? <RentTab /> : <UtilitiesTab />}
     </>
   );
 }

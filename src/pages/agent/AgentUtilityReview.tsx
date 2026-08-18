@@ -1,41 +1,14 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, FileText, History, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { ActivityItem } from "@/components/ActivityItem";
-import { useOwnerPayments } from "@/lib/owner-payments-context";
-import { api, ApiError, API_URL } from "@/lib/api";
+import { useAgentUtilities } from "@/lib/agent-utilities-context";
+import { ApiError, API_URL } from "@/lib/api";
 import { formatCents, formatMonth } from "@/lib/format";
-
-interface AuditEntry {
-  id: string;
-  action: string;
-  metadata: string | null;
-  created_at: string;
-  actor_name: string;
-  actor_role: string;
-}
-
-function describeEntry(entry: AuditEntry): string {
-  const roleLabel = entry.actor_role.charAt(0) + entry.actor_role.slice(1).toLowerCase();
-  if (entry.action === "RENT_PAYMENT_CONFIRMED") {
-    return `Confirmed by ${entry.actor_name} (${roleLabel})`;
-  }
-  if (entry.action === "RENT_PAYMENT_REJECTED") {
-    let reason: string | null = null;
-    try {
-      reason = entry.metadata ? JSON.parse(entry.metadata).reason : null;
-    } catch {
-      reason = null;
-    }
-    return `Rejected by ${entry.actor_name} (${roleLabel})${reason ? ` — ${reason}` : ""}`;
-  }
-  return `${entry.action} by ${entry.actor_name} (${roleLabel})`;
-}
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -46,10 +19,10 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function OwnerPaymentReview() {
+export function AgentUtilityReview() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { getRecord, confirmPayment, rejectPayment, loading } = useOwnerPayments();
+  const { getRecord, confirmUtility, rejectUtility, loading } = useAgentUtilities();
   const record = id ? getRecord(id) : undefined;
 
   const [showRejectForm, setShowRejectForm] = useState(false);
@@ -57,25 +30,16 @@ export function OwnerPaymentReview() {
   const [submitting, setSubmitting] = useState<"confirm" | "reject" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<"confirmed" | "rejected" | null>(null);
-  const [history, setHistory] = useState<AuditEntry[]>([]);
-
-  useEffect(() => {
-    if (!id) return;
-    api
-      .get<{ entries: AuditEntry[] }>(`/api/owner/payments/${id}/audit`)
-      .then((data) => setHistory(data.entries))
-      .catch(() => setHistory([]));
-  }, [id]);
 
   if (loading) return null;
-  if (!record && !result) return <Navigate to="/owner/payments" replace />;
+  if (!record && !result) return <Navigate to="/agent/payments" replace />;
 
   async function handleConfirm() {
     if (!record) return;
     setError(null);
     setSubmitting("confirm");
     try {
-      await confirmPayment(record.id);
+      await confirmUtility(record.id);
       setResult("confirmed");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
@@ -89,7 +53,7 @@ export function OwnerPaymentReview() {
     setError(null);
     setSubmitting("reject");
     try {
-      await rejectPayment(record.id, reason || undefined);
+      await rejectUtility(record.id, reason || undefined);
       setResult("rejected");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
@@ -118,22 +82,22 @@ export function OwnerPaymentReview() {
         </h1>
         <p className="mt-1.5 max-w-xs text-sm text-ink/60">
           {confirmed
-            ? "The tenant will see this payment as confirmed."
-            : "The tenant can resubmit this month's payment."}
+            ? "The unit leader will see this payment as confirmed."
+            : "The unit leader can resubmit this month's payment."}
         </p>
-        <Button className="mt-6" onClick={() => navigate("/owner/payments")}>
+        <Button className="mt-6" onClick={() => navigate("/agent/payments")}>
           Back to payments
         </Button>
       </div>
     );
   }
 
-  if (!record) return <Navigate to="/owner/payments" replace />;
+  if (!record) return <Navigate to="/agent/payments" replace />;
 
   return (
     <div className="animate-fade-in-up">
       <Link
-        to="/owner/payments"
+        to="/agent/payments"
         className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink/60 hover:text-ink"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -141,7 +105,7 @@ export function OwnerPaymentReview() {
       </Link>
 
       <PageHeader
-        title={record.tenantName}
+        title={record.type === "WATER" ? "Water" : "Electricity"}
         description={`${record.propertyName} · ${record.unitLabel}`}
         action={<StatusBadge status={record.status} />}
       />
@@ -160,32 +124,14 @@ export function OwnerPaymentReview() {
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-ink">Uploaded receipt</p>
-              <p className="text-xs text-ink/50">Submitted by tenant</p>
+              <p className="text-xs text-ink/50">Submitted by unit leader</p>
             </div>
           </div>
-          <a href={`${API_URL}/api/owner/payments/${record.id}/receipt`} target="_blank" rel="noreferrer">
+          <a href={`${API_URL}/api/agent/utilities/${record.id}/receipt`} target="_blank" rel="noreferrer">
             <Button variant="secondary" size="sm">
               View
             </Button>
           </a>
-        </Card>
-      )}
-
-      {history.length > 0 && (
-        <Card className="mb-4">
-          <div className="mb-3 flex items-center gap-2">
-            <History className="h-4 w-4 text-ink/40" />
-            <h2 className="text-sm font-semibold text-ink">Review history</h2>
-          </div>
-          {history.map((entry, i) => (
-            <ActivityItem
-              key={entry.id}
-              icon={entry.action === "RENT_PAYMENT_CONFIRMED" ? CheckCircle2 : XCircle}
-              description={describeEntry(entry)}
-              time={new Date(entry.created_at).toLocaleString()}
-              isLast={i === history.length - 1}
-            />
-          ))}
         </Card>
       )}
 
@@ -214,7 +160,7 @@ export function OwnerPaymentReview() {
         <Card className="flex flex-col gap-3">
           <Textarea
             label="Reason (optional)"
-            placeholder="Let the tenant know why this was rejected"
+            placeholder="Let the unit leader know why this was rejected"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
           />

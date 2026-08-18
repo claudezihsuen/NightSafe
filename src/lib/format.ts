@@ -5,6 +5,16 @@ export function formatCents(cents: number): string {
   });
 }
 
+/** Deposits can be in any currency (task examples use MYR), unlike rent/utilities which are USD-only so far. */
+export function formatMoney(cents: number, currency: string): string {
+  try {
+    return (cents / 100).toLocaleString("en-US", { style: "currency", currency });
+  } catch {
+    // Unknown/invalid currency code — fall back to a plain prefix rather than throwing.
+    return `${currency} ${(cents / 100).toFixed(2)}`;
+  }
+}
+
 /** 'YYYY-MM' -> 'August 2026' */
 export function formatMonth(month: string): string {
   const [year, m] = month.split("-").map(Number);

@@ -10,11 +10,6 @@ export type PaymentStatus =
 
 export type UtilityType = "WATER" | "ELECTRICITY";
 
-// Used specifically by the tenant rent payment workflow — labels match
-// the exact statuses required there ("Paid", "Waiting Payment", etc.),
-// distinct from the WAITING_PAYMENT/PENDING_REVIEW styling elsewhere.
-export type RentStatus = "PAID" | "WAITING_PAYMENT" | "PENDING" | "PAYMENT_CONFIRMED" | "REJECTED";
-
 export interface AuthUser {
   id: string;
   email: string;
@@ -33,6 +28,77 @@ export interface OwnerProperty {
   name: string;
   address: string;
   units: OwnerUnit[];
+}
+
+export const DEPOSIT_TYPE_PRESETS = [
+  "Rental Deposit",
+  "Water Deposit",
+  "Electricity Deposit",
+  "Utility Deposit",
+  "Key Deposit",
+  "Access Card Deposit",
+  "Parking Deposit",
+  "Furniture Deposit",
+  "Equipment Deposit",
+] as const;
+
+export interface DepositItem {
+  id: string;
+  lease_id: string;
+  name: string;
+  type: string;
+  description: string | null;
+  quantity: number;
+  unit_amount: number; // cents
+  total_amount: number; // cents
+  currency: string;
+  refundable: number; // 0 | 1
+  notes: string | null; // absent entirely in the tenant-facing response
+  created_at: string;
+  amountPaid: number; // cents
+  paymentStatus: "EXPECTED" | "PARTIALLY_PAID" | "FULLY_PAID";
+}
+
+export interface DepositDeduction {
+  id: string;
+  lease_id: string;
+  deposit_item_id: string | null;
+  name: string;
+  amount: number; // cents
+  reason: string;
+  description: string | null;
+  receipt_key: string | null;
+  created_at: string;
+}
+
+export interface DepositReturn {
+  id: string;
+  lease_id: string;
+  amount: number; // cents
+  returned_at: string;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface DepositSummary {
+  depositStatus: "DRAFT" | "FINALIZED";
+  finalizedAt: string | null;
+  totalDeposit: number;
+  totalRefundableDeposit: number;
+  totalPaid: number;
+  totalDeducted: number;
+  totalReturned: number;
+  amountHeld: number;
+  remainingRefundable: number;
+  paymentStatus: "EXPECTED" | "PARTIALLY_PAID" | "FULLY_PAID";
+  refundStatus: "NOT_APPLICABLE" | "HELD" | "PARTIALLY_RETURNED" | "FULLY_RETURNED";
+}
+
+export interface DepositBreakdown {
+  items: DepositItem[];
+  deductions: DepositDeduction[];
+  returns: DepositReturn[];
+  summary: DepositSummary;
 }
 
 export interface NavItem {
