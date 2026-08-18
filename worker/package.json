@@ -5,12 +5,14 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
     "db:migrate:local": "wrangler d1 migrations apply nightsafe-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply nightsafe-db --remote",
+    "db:migrate:staging:local": "wrangler d1 migrations apply nightsafe-staging-db --env staging --local",
+    "db:migrate:staging:remote": "wrangler d1 migrations apply nightsafe-staging-db --env staging --remote",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
     "@cloudflare/workers-types": "^4.20240909.0",
     "typescript": "^5.5.4",
     "wrangler": "^3.78.0"

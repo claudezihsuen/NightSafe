@@ -1,10 +1,9 @@
-name = "nightsafe"
+name = "nightsafe-api"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
-workers_dev = true
 
 [vars]
-ENVIRONMENT = "production"
+ENVIRONMENT = "development"
 FRONTEND_URL = "https://nightsafe.pages.dev"
 
 [[d1_databases]]
@@ -12,8 +11,40 @@ binding = "DB"
 database_name = "nightsafe-db"
 database_id = "451d7ba8-5ee9-47e6-b710-1795f02c18bb"
 
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "nightsafe-files"
+
 # For production, override vars via `wrangler deploy` environments or the
 # dashboard, e.g.:
 # [env.production.vars]
 # ENVIRONMENT = "production"
 # FRONTEND_URL = "https://app.nightsafe.example"
+
+# =============================================================================
+# STAGING — fully isolated from everything above. Nothing above this line is
+# touched by `wrangler deploy --env staging`; nothing here is touched by a
+# bare `wrangler deploy` (which is what production's deploy command runs).
+#
+# One-time setup (see worker/STAGING.md for full walkthrough):
+#   npx wrangler d1 create nightsafe-staging-db      -> paste database_id below
+#   npx wrangler r2 bucket create nightsafe-staging-files
+#
+# Deploy:  npx wrangler deploy --env staging
+# Migrate: npx wrangler d1 migrations apply nightsafe-staging-db --env staging --remote
+# =============================================================================
+[env.staging]
+name = "nightsafe-staging"
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+FRONTEND_URL = "https://nightsafe-staging.claude-zihsuen.workers.dev/"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "nightsafe-staging-db"
+database_id = "d5bb2e5f-b86e-483a-9115-517f3e88c61b"
+
+[[env.staging.r2_buckets]]
+binding = "FILES"
+bucket_name = "nightsafe-staging-files"
