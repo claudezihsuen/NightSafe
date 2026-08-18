@@ -56,3 +56,11 @@ export async function verifyPassword(password: string, stored: string): Promise<
   }
   return diff === 0;
 }
+
+export async function hashToken(token: string): Promise<string> {
+  const data = new TextEncoder().encode(token);
+
+  const digest = await crypto.subtle.digest("SHA-256", data);
+
+  return toHex(digest);
+}
