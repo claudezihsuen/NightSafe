@@ -1,4 +1,5 @@
 import type { Env, SessionUser } from "../types";
+import { getDepositBreakdown, streamDepositReceipt } from "../shared/deposits";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -114,4 +115,45 @@ export async function getReceipt(env: Env, actor: SessionUser, paymentId: string
       "Cache-Control": "private, max-age=0",
     },
   });
+}
+
+async function getMyLeaseId(env: Env, actor: SessionUser): Promise<string | null> {
+  const row = await env.DB.prepare(
+    "SELECT id FROM leases WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 1",
+  )
+    .bind(actor.id)
+    .first<{ id: string }>();
+  return row?.id ?? null;
+}
+
+/**
+ * GET /api/tenant/deposit — this tenant's own deposit breakdown. Internal
+ * Owner/Agent-only fields (item notes, who created each item) are stripped
+ * before returning; everything else needed for the tenant-facing summary
+ * (items, amounts, deductions, final refund calculation) is included.
+ */
+export async function getMyDeposit(env: Env, actor: SessionUser): Promise<Response> {
+  const leaseId = await getMyLeaseId(env, actor);
+  if (!leaseId) return json({ error: "No tenancy found." }, 404);
+
+  const breakdown = await getDepositBreakdown(env, leaseId);
+
+  const items = breakdown.items.map(({ notes, created_by, ...rest }) => rest);
+
+  return json({ ...breakdown, items });
+}
+
+/** GET /api/tenant/deposit/deductions/:id/receipt — supporting document for a deduction against this tenant's own deposit. */
+export async function getMyDeductionReceipt(env: Env, actor: SessionUser, deductionId: string): Promise<Response> {
+  const leaseId = await getMyLeaseId(env, actor);
+  if (!leaseId) return new Response("Not found.", { status: 404 });
+
+  const deduction = await env.DB.prepare(
+    "SELECT receipt_key FROM deposit_deductions WHERE id = ? AND lease_id = ?",
+  )
+    .bind(deductionId, leaseId)
+    .first<{ receipt_key: string | null }>();
+
+  if (!deduction) return new Response("Not found.", { status: 404 });
+  return streamDepositReceipt(env, deduction.receipt_key);
 }

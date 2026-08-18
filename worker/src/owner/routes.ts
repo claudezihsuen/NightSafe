@@ -5,6 +5,8 @@ import { INVITE_TTL_MS } from "../auth/routes";
 import { createTenantForActor } from "../shared/tenant-creation";
 import type { ScopeCheck } from "../shared/tenant-creation";
 import { confirmPaymentCore, rejectPaymentCore, streamReceipt } from "../shared/payment-review";
+import { confirmUtilityCore, rejectUtilityCore, streamUtilityReceipt } from "../shared/utility-review";
+import { createDepositRoutes } from "../shared/deposits";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -348,3 +350,116 @@ export async function getPaymentAuditLog(env: Env, actor: SessionUser, paymentId
 
   return json({ entries: results ?? [] });
 }
+
+export interface OwnerUtilityReviewRow {
+  id: string;
+  unit_id: string;
+  type: "WATER" | "ELECTRICITY";
+  month: string;
+  amount: number;
+  status: "WAITING_PAYMENT" | "PENDING_REVIEW" | "PAYMENT_CONFIRMED";
+  receipt_key: string | null;
+  submitted_at: string | null;
+  payment_date: string | null;
+  property_name: string;
+  unit_label: string;
+  leader_name: string | null;
+}
+
+const SELECT_OWNER_UTILITY = `
+  SELECT
+    utility_payments.*,
+    properties.name AS property_name,
+    units.label AS unit_label,
+    leader.name AS leader_name
+  FROM utility_payments
+  JOIN units ON units.id = utility_payments.unit_id
+  JOIN properties ON properties.id = units.property_id
+  LEFT JOIN users AS leader ON leader.unit_id = units.id AND leader.role = 'UNIT_LEADER'
+  WHERE properties.owner_id = ?
+`;
+
+/** GET /api/owner/utilities/pending — water/electricity payments awaiting this Owner's review. */
+export async function listPendingUtilities(env: Env, actor: SessionUser): Promise<Response> {
+  const { results } = await env.DB.prepare(
+    `${SELECT_OWNER_UTILITY} AND utility_payments.status = 'PENDING_REVIEW' ORDER BY utility_payments.submitted_at ASC`,
+  )
+    .bind(actor.id)
+    .all<OwnerUtilityReviewRow>();
+
+  return json({ utilities: results ?? [] });
+}
+
+async function getOwnedUtility(env: Env, actor: SessionUser, utilityId: string): Promise<OwnerUtilityReviewRow | null> {
+  const row = await env.DB.prepare(`${SELECT_OWNER_UTILITY} AND utility_payments.id = ?`)
+    .bind(actor.id, utilityId)
+    .first<OwnerUtilityReviewRow>();
+  return row ?? null;
+}
+
+/** GET /api/owner/utilities/:id */
+export async function getUtilityForReview(env: Env, actor: SessionUser, utilityId: string): Promise<Response> {
+  const utility = await getOwnedUtility(env, actor, utilityId);
+  if (!utility) return json({ error: "Utility payment not found." }, 404);
+  return json({ utility });
+}
+
+/** GET /api/owner/utilities/:id/receipt */
+export async function getUtilityReceipt(env: Env, actor: SessionUser, utilityId: string): Promise<Response> {
+  const utility = await getOwnedUtility(env, actor, utilityId);
+  if (!utility) return new Response("Not found.", { status: 404 });
+  return streamUtilityReceipt(env, utility);
+}
+
+/** POST /api/owner/utilities/:id/confirm */
+export async function confirmUtility(env: Env, actor: SessionUser, utilityId: string): Promise<Response> {
+  return confirmUtilityCore(env, actor, utilityId, "OWNER", getOwnedUtility);
+}
+
+/** POST /api/owner/utilities/:id/reject */
+export async function rejectUtility(request: Request, env: Env, actor: SessionUser, utilityId: string): Promise<Response> {
+  return rejectUtilityCore(request, env, actor, utilityId, "OWNER", getOwnedUtility);
+}
+
+/** GET /api/owner/tenants — this Owner's tenants, with their lease id (for deposit management). */
+export async function listTenants(env: Env, actor: SessionUser): Promise<Response> {
+  const { results } = await env.DB.prepare(
+    `SELECT tenant.id, tenant.name, tenant.email, tenant.phone, tenant.status,
+            leases.id AS lease_id, leases.is_unit_leader,
+            properties.name AS property_name, units.label AS unit_label
+     FROM leases
+     JOIN units ON units.id = leases.unit_id
+     JOIN properties ON properties.id = units.property_id
+     JOIN users AS tenant ON tenant.id = leases.tenant_id
+     WHERE properties.owner_id = ? AND leases.status = 'ACTIVE'
+     ORDER BY tenant.name`,
+  )
+    .bind(actor.id)
+    .all();
+
+  return json({ tenants: results ?? [] });
+}
+
+const depositRoutes = createDepositRoutes(async (env, actor, leaseId) => {
+  const row = await env.DB.prepare(
+    `SELECT leases.id FROM leases
+     JOIN units ON units.id = leases.unit_id
+     JOIN properties ON properties.id = units.property_id
+     WHERE leases.id = ? AND properties.owner_id = ?`,
+  )
+    .bind(leaseId, actor.id)
+    .first();
+  return Boolean(row);
+});
+
+export const getDeposit = depositRoutes.getDeposit;
+export const createDepositItemRoute = depositRoutes.createItem;
+export const updateDepositItemRoute = depositRoutes.updateItem;
+export const deleteDepositItemRoute = depositRoutes.deleteItem;
+export const finalizeDepositRoute = depositRoutes.finalize;
+export const recordDepositPaymentRoute = depositRoutes.recordPayment;
+export const createDepositDeductionRoute = depositRoutes.createDeductionRoute;
+export const deleteDepositDeductionRoute = depositRoutes.deleteDeductionRoute;
+export const recordDepositReturnRoute = depositRoutes.recordReturnRoute;
+export const getDepositDeductionReceiptRoute = depositRoutes.getDeductionReceipt;
+export const getDepositPaymentReceiptRoute = depositRoutes.getPaymentReceipt;

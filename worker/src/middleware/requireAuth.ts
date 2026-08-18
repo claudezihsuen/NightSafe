@@ -1,7 +1,6 @@
 import type { Env, Role, SessionUser } from "../types";
 import { getSessionUser } from "../db";
-import { readSessionToken } from "../auth/session";
-import { hashToken } from "../auth/hash";
+import { readSessionToken, hashToken } from "./session";
 
 /** Resolves the current session user from the request cookie, or null. */
 export async function resolveSession(request: Request, env: Env): Promise<SessionUser | null> {

@@ -13,7 +13,7 @@ export async function getUserById(env: Env, id: string): Promise<UserRow | null>
 }
 
 export function toSessionUser(user: UserRow): SessionUser {
-  return { id: user.id, email: user.email, name: user.name, role: user.role };
+  return { id: user.id, email: user.email, name: user.name, role: user.role, unitId: user.unit_id };
 }
 
 export async function createSession(env: Env, userId: string, tokenHash: string, expiresAt: string) {

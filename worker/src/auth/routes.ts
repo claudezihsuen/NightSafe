@@ -67,54 +67,6 @@ export async function me(sessionUser: SessionUser | null): Promise<Response> {
   return json({ user: sessionUser });
 }
 
-/**
- * POST /api/auth/invite — Owner/Agent creates a tenant account and an
- * activation invitation. Returns the invite link; NightSafe never sets or
- * sees the tenant's password.
- */
-export async function inviteTenant(
-  request: Request,
-  env: Env,
-  actor: SessionUser,
-): Promise<Response> {
-  if (actor.role !== "OWNER" && actor.role !== "AGENT") {
-    return json({ error: "Not authorized." }, 403);
-  }
-
-  const body = await request.json().catch(() => null);
-  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
-  const name = typeof body?.name === "string" ? body.name.trim() : "";
-
-  if (!email || !name) {
-    return json({ error: "Name and email are required." }, 400);
-  }
-
-  const existing = await getUserByEmail(env, email);
-  if (existing) {
-    return json({ error: "An account with this email already exists." }, 409);
-  }
-
-  const userId = crypto.randomUUID();
-  await env.DB.prepare(
-    "INSERT INTO users (id, email, name, role, password_hash, status) VALUES (?, ?, ?, 'TENANT', NULL, 'PENDING')",
-  )
-    .bind(userId, email, name)
-    .run();
-
-  const token = generateToken();
-  const tokenHash = await hashToken(token);
-  const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
-
-  await env.DB.prepare(
-    "INSERT INTO invitations (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
-  )
-    .bind(tokenHash, userId, expiresAt)
-    .run();
-
-  const inviteLink = `${env.FRONTEND_URL}/invite/${token}`;
-  return json({ inviteLink }, 201);
-}
-
 /** GET /api/auth/invite/:token — check an invite is valid before showing the activation form. */
 export async function getInvite(env: Env, token: string): Promise<Response> {
   const tokenHash = await hashToken(token);

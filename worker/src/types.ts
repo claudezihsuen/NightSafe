@@ -14,7 +14,9 @@ export interface UserRow {
   phone: string | null;
   role: Role;
   password_hash: string | null;
-  status: "ACTIVE" | "WAITING_FOR_ACTIVATION";
+  status: "ACTIVE" | "WAITING_FOR_ACTIVATION" | "INACTIVE";
+  created_by: string | null;
+  unit_id: string | null; // Unit Leader's assigned unit; null for other roles
   created_at: string;
 }
 
@@ -23,6 +25,7 @@ export interface SessionUser {
   email: string;
   name: string;
   role: Role;
+  unitId: string | null;
 }
 
 export interface PropertyRow {

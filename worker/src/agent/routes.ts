@@ -3,6 +3,8 @@ import { getPropertyById, getUnitById } from "../db";
 import { createTenantForActor } from "../shared/tenant-creation";
 import type { ScopeCheck } from "../shared/tenant-creation";
 import { confirmPaymentCore, rejectPaymentCore, streamReceipt } from "../shared/payment-review";
+import { confirmUtilityCore, rejectUtilityCore, streamUtilityReceipt } from "../shared/utility-review";
+import { createDepositRoutes } from "../shared/deposits";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -87,6 +89,7 @@ export async function listAssignedTenants(env: Env, actor: SessionUser): Promise
   const placeholders = [...unitIds].map(() => "?").join(",");
   const { results } = await env.DB.prepare(
     `SELECT tenant.id, tenant.name, tenant.email, tenant.phone, tenant.status,
+            leases.id AS lease_id,
             properties.name AS property_name, units.label AS unit_label
      FROM leases
      JOIN units ON units.id = leases.unit_id
@@ -217,3 +220,109 @@ export async function confirmPayment(env: Env, actor: SessionUser, paymentId: st
 export async function rejectPayment(request: Request, env: Env, actor: SessionUser, paymentId: string): Promise<Response> {
   return rejectPaymentCore(request, env, actor, paymentId, "AGENT", getAssignedPayment);
 }
+
+export interface AgentUtilityReviewRow {
+  id: string;
+  unit_id: string;
+  type: "WATER" | "ELECTRICITY";
+  month: string;
+  amount: number;
+  status: "WAITING_PAYMENT" | "PENDING_REVIEW" | "PAYMENT_CONFIRMED";
+  receipt_key: string | null;
+  submitted_at: string | null;
+  payment_date: string | null;
+  property_name: string;
+  unit_label: string;
+  leader_name: string | null;
+}
+
+/** Utility payments on units this Agent is assigned to. Same column discipline as rent payments — no revenue aggregates. */
+async function selectAgentUtilities(
+  env: Env,
+  actor: SessionUser,
+  extraWhere: string,
+  extraParams: unknown[] = [],
+): Promise<AgentUtilityReviewRow[]> {
+  const unitIds = await getAssignedUnitIds(env, actor.id);
+  if (unitIds.size === 0) return [];
+
+  const placeholders = [...unitIds].map(() => "?").join(",");
+  const { results } = await env.DB.prepare(
+    `SELECT
+       utility_payments.id, utility_payments.unit_id, utility_payments.type, utility_payments.month,
+       utility_payments.amount, utility_payments.status, utility_payments.receipt_key,
+       utility_payments.submitted_at, utility_payments.payment_date,
+       properties.name AS property_name,
+       units.label AS unit_label,
+       leader.name AS leader_name
+     FROM utility_payments
+     JOIN units ON units.id = utility_payments.unit_id
+     JOIN properties ON properties.id = units.property_id
+     LEFT JOIN users AS leader ON leader.unit_id = units.id AND leader.role = 'UNIT_LEADER'
+     WHERE utility_payments.unit_id IN (${placeholders}) ${extraWhere}`,
+  )
+    .bind(...unitIds, ...extraParams)
+    .all<AgentUtilityReviewRow>();
+
+  return results ?? [];
+}
+
+/** GET /api/agent/utilities/pending */
+export async function listPendingUtilities(env: Env, actor: SessionUser): Promise<Response> {
+  const utilities = await selectAgentUtilities(
+    env,
+    actor,
+    "AND utility_payments.status = 'PENDING_REVIEW' ORDER BY utility_payments.submitted_at ASC",
+  );
+  return json({ utilities });
+}
+
+async function getAssignedUtility(env: Env, actor: SessionUser, utilityId: string): Promise<AgentUtilityReviewRow | null> {
+  const rows = await selectAgentUtilities(env, actor, "AND utility_payments.id = ?", [utilityId]);
+  return rows[0] ?? null;
+}
+
+/** GET /api/agent/utilities/:id */
+export async function getUtilityForReview(env: Env, actor: SessionUser, utilityId: string): Promise<Response> {
+  const utility = await getAssignedUtility(env, actor, utilityId);
+  if (!utility) return json({ error: "Utility payment not found." }, 404);
+  return json({ utility });
+}
+
+/** GET /api/agent/utilities/:id/receipt */
+export async function getUtilityReceipt(env: Env, actor: SessionUser, utilityId: string): Promise<Response> {
+  const utility = await getAssignedUtility(env, actor, utilityId);
+  if (!utility) return new Response("Not found.", { status: 404 });
+  return streamUtilityReceipt(env, utility);
+}
+
+/** POST /api/agent/utilities/:id/confirm */
+export async function confirmUtility(env: Env, actor: SessionUser, utilityId: string): Promise<Response> {
+  return confirmUtilityCore(env, actor, utilityId, "AGENT", getAssignedUtility);
+}
+
+/** POST /api/agent/utilities/:id/reject */
+export async function rejectUtility(request: Request, env: Env, actor: SessionUser, utilityId: string): Promise<Response> {
+  return rejectUtilityCore(request, env, actor, utilityId, "AGENT", getAssignedUtility);
+}
+
+const depositRoutes = createDepositRoutes(async (env, actor, leaseId) => {
+  const lease = await env.DB.prepare("SELECT unit_id FROM leases WHERE id = ?")
+    .bind(leaseId)
+    .first<{ unit_id: string }>();
+  if (!lease) return false;
+  const unitIds = await getAssignedUnitIds(env, actor.id);
+  return unitIds.has(lease.unit_id);
+});
+
+export const getDeposit = depositRoutes.getDeposit;
+export const createDepositItemRoute = depositRoutes.createItem;
+export const updateDepositItemRoute = depositRoutes.updateItem;
+export const deleteDepositItemRoute = depositRoutes.deleteItem;
+export const finalizeDepositRoute = depositRoutes.finalize;
+export const recordDepositPaymentRoute = depositRoutes.recordPayment;
+export const createDepositDeductionRoute = depositRoutes.createDeductionRoute;
+export const deleteDepositDeductionRoute = depositRoutes.deleteDeductionRoute;
+export const recordDepositReturnRoute = depositRoutes.recordReturnRoute;
+export const getDepositDeductionReceiptRoute = depositRoutes.getDeductionReceipt;
+export const getDepositPaymentReceiptRoute = depositRoutes.getPaymentReceipt;
