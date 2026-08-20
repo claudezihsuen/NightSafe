@@ -1,60 +1,62 @@
-import { Bell, CheckCircle2, FileText, Megaphone, Wallet, XCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bell } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { NotificationItem } from "@/components/NotificationItem";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { api, ApiError } from "@/lib/api";
 
-const notifications = [
-  {
-    icon: Wallet,
-    title: "Rent due soon",
-    description: "Your August rent of $1,200.00 is due on Aug 15.",
-    time: "2h ago",
-    unread: true,
-  },
-  {
-    icon: CheckCircle2,
-    title: "Payment confirmed",
-    description: "Your May rent payment was confirmed by Sarah Chen.",
-    time: "3 months ago",
-  },
-  {
-    icon: XCircle,
-    title: "Payment rejected",
-    description: "Your April receipt was rejected — please resubmit a clearer photo.",
-    time: "4 months ago",
-  },
-  {
-    icon: Wallet,
-    title: "Payment submitted",
-    description: "Your June rent receipt was submitted and is awaiting review.",
-    time: "2 months ago",
-  },
-  {
-    icon: FileText,
-    title: "Agreement updated",
-    description: "Your rental agreement was renewed for 12 months.",
-    time: "7 months ago",
-  },
-  {
-    icon: Megaphone,
-    title: "Notice from Sagewood Residences",
-    description: "Water will be shut off briefly on Aug 20 for scheduled maintenance.",
-    time: "1 day ago",
-  },
-];
+interface Notification {
+  id: string;
+  title: string;
+  body: string;
+  read_at: string | null;
+  created_at: string;
+}
 
 export function TenantNotifications() {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .get<{ notifications: Notification[] }>("/api/tenant/notifications")
+      .then((data) => setNotifications(data.notifications))
+      .catch((err) => setError(err instanceof ApiError ? err.message : "Couldn't load your notifications."))
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div className="animate-fade-in-up">
       <PageHeader title="Notifications" description="Updates about your rental." />
-      {notifications.length === 0 ? (
+
+      {loading && (
+        <div className="flex flex-col gap-3">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      )}
+
+      {!loading && error && <p className="text-sm text-status-overdue">{error}</p>}
+
+      {!loading && !error && notifications.length === 0 && (
         <div className="flex flex-col items-center justify-center rounded-card border border-dashed border-border bg-white px-6 py-12 text-center">
           <Bell className="mb-3 h-6 w-6 text-sage-500" />
-          <p className="text-sm font-medium text-ink">You're all caught up</p>
+          <p className="text-sm font-medium text-ink">No notifications yet</p>
         </div>
-      ) : (
+      )}
+
+      {!loading && !error && notifications.length > 0 && (
         <div className="flex flex-col gap-3">
-          {notifications.map((n, i) => (
-            <NotificationItem key={i} {...n} />
+          {notifications.map((n) => (
+            <NotificationItem
+              key={n.id}
+              icon={Bell}
+              title={n.title}
+              description={n.body}
+              time={new Date(n.created_at).toLocaleDateString()}
+              unread={!n.read_at}
+            />
           ))}
         </div>
       )}

@@ -9,6 +9,7 @@ import { ActivateAccountPage } from "@/pages/auth/ActivateAccountPage";
 import { OwnerLayout } from "@/layouts/OwnerLayout";
 import { OwnerDashboard } from "@/pages/owner/OwnerDashboard";
 import { OwnerProperties } from "@/pages/owner/OwnerProperties";
+import { OwnerPropertyDetail } from "@/pages/owner/OwnerPropertyDetail";
 import { OwnerPeople } from "@/pages/owner/OwnerPeople";
 import { OwnerCreateTenant } from "@/pages/owner/OwnerCreateTenant";
 import { OwnerCreateAgent } from "@/pages/owner/OwnerCreateAgent";
@@ -75,6 +76,7 @@ export default function App() {
         >
           <Route index element={<OwnerDashboard />} />
           <Route path="properties" element={<OwnerProperties />} />
+          <Route path="properties/:id" element={<OwnerPropertyDetail />} />
           <Route path="people" element={<OwnerPeople />} />
           <Route path="people/new" element={<OwnerCreateTenant />} />
           <Route path="agents/new" element={<OwnerCreateAgent />} />

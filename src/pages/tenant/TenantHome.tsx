@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Bell, ChevronRight, FileText, History, ShieldCheck, Wallet } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -8,6 +9,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/lib/auth-context";
 import { useTenantPayments } from "@/lib/tenant-payments-context";
+import { api } from "@/lib/api";
 import { formatCents, formatDate, formatMonth } from "@/lib/format";
 
 const quickActions = [
@@ -17,28 +19,39 @@ const quickActions = [
   { label: "Notifications", description: "Updates & reminders", icon: Bell, to: "/tenant/notifications" },
 ];
 
-const recentNotifications = [
-  {
-    icon: Wallet,
-    title: "Rent due soon",
-    description: "Check your latest rent status below.",
-    time: "Just now",
-    unread: true,
-  },
-  {
-    icon: FileText,
-    title: "Agreement updated",
-    description: "Your rental agreement was renewed for 12 months.",
-    time: "1 month ago",
-  },
-];
+interface Notification {
+  id: string;
+  title: string;
+  body: string;
+  read_at: string | null;
+  created_at: string;
+}
+
+interface TenantUnit {
+  unit_label: string;
+  property_name: string;
+  property_address: string;
+}
 
 export function TenantHome() {
   const { user } = useAuth();
   const { currentRecord, loading } = useTenantPayments();
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unit, setUnit] = useState<TenantUnit | null>(null);
   const firstName = user?.name?.split(" ")[0];
 
   const isWaiting = currentRecord?.status === "WAITING_PAYMENT";
+
+  useEffect(() => {
+    api
+      .get<{ notifications: Notification[] }>("/api/tenant/notifications")
+      .then((data) => setNotifications(data.notifications.slice(0, 2)))
+      .catch(() => setNotifications([]));
+    api
+      .get<{ unit: TenantUnit | null }>("/api/tenant/unit")
+      .then((data) => setUnit(data.unit))
+      .catch(() => setUnit(null));
+  }, []);
 
   return (
     <div className="animate-fade-in-up">
@@ -69,7 +82,11 @@ export function TenantHome() {
         />
       )}
 
-      <UnitCard unitLabel="Your unit" propertyName="Managed by your property owner" className="mb-6" />
+      <UnitCard
+        unitLabel={unit ? unit.unit_label : "Unit not assigned yet"}
+        propertyName={unit ? unit.property_name : "Contact your owner or agent"}
+        className="mb-6"
+      />
 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {quickActions.map(({ label, description, icon: Icon, to }) => (
@@ -90,17 +107,28 @@ export function TenantHome() {
         ))}
       </div>
 
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink">Recent notifications</h2>
-        <Link to="/tenant/notifications" className="text-sm font-medium text-sage-700 hover:text-sage-800">
-          View all
-        </Link>
-      </div>
-      <div className="mt-3 flex flex-col gap-3">
-        {recentNotifications.map((n, i) => (
-          <NotificationItem key={i} {...n} />
-        ))}
-      </div>
+      {notifications.length > 0 && (
+        <>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-ink">Recent notifications</h2>
+            <Link to="/tenant/notifications" className="text-sm font-medium text-sage-700 hover:text-sage-800">
+              View all
+            </Link>
+          </div>
+          <div className="mt-3 flex flex-col gap-3">
+            {notifications.map((n) => (
+              <NotificationItem
+                key={n.id}
+                icon={Bell}
+                title={n.title}
+                description={n.body}
+                time={new Date(n.created_at).toLocaleDateString()}
+                unread={!n.read_at}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
