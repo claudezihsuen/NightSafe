@@ -4,6 +4,8 @@ import { resolveSession, requireRole } from "./middleware/requireAuth";
 import { login, logout, me, getInvite, activate } from "./auth/routes";
 import {
   listProperties,
+  createProperty,
+  createUnit,
   createTenant,
   listAgents,
   createAgent,
@@ -35,7 +37,18 @@ import {
   getDepositDeductionReceiptRoute as getOwnerDepositDeductionReceipt,
   getDepositPaymentReceiptRoute as getOwnerDepositPaymentReceipt,
 } from "./owner/routes";
-import { listPayments, getPayment, submitPayment, getReceipt, getMyDeposit, getMyDeductionReceipt } from "./tenant/routes";
+import {
+  listPayments,
+  getPayment,
+  submitPayment,
+  getReceipt,
+  getMyDeposit,
+  getMyDeductionReceipt,
+  listMyNotifications,
+  getMyAgreement,
+  downloadMyAgreement,
+  getMyUnit as getMyTenantUnit,
+} from "./tenant/routes";
 import {
   listAssignedProperties,
   listAssignedTenants,
@@ -86,6 +99,7 @@ const AGENT_PAYMENT_RECEIPT = /^\/api\/agent\/payments\/([^/]+)\/receipt$/;
 const AGENT_PAYMENT_CONFIRM = /^\/api\/agent\/payments\/([^/]+)\/confirm$/;
 const AGENT_PAYMENT_REJECT = /^\/api\/agent\/payments\/([^/]+)\/reject$/;
 
+const OWNER_PROPERTY_UNITS = /^\/api\/owner\/properties\/([^/]+)\/units$/;
 const OWNER_AGENT_ACTIVATE = /^\/api\/owner\/agents\/([^/]+)\/activate$/;
 const OWNER_AGENT_DEACTIVATE = /^\/api\/owner\/agents\/([^/]+)\/deactivate$/;
 const OWNER_AGENT_ASSIGNMENTS = /^\/api\/owner\/agents\/([^/]+)\/assignments$/;
@@ -126,6 +140,7 @@ const AGENT_DEPOSIT_DEDUCTION = /^\/api\/agent\/deposit-deductions\/([^/]+)$/;
 const AGENT_DEPOSIT_DEDUCTION_RECEIPT = /^\/api\/agent\/deposit-deductions\/([^/]+)\/receipt$/;
 
 const TENANT_DEPOSIT_DEDUCTION_RECEIPT = /^\/api\/tenant\/deposit\/deductions\/([^/]+)\/receipt$/;
+const TENANT_AGREEMENT_DOWNLOAD = /^\/api\/tenant\/agreement\/([^/]+)\/download$/;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -162,6 +177,21 @@ export default {
           response = json({ error: "Not authorized." }, 403);
         } else {
           response = await listProperties(env, sessionUser!);
+        }
+      } else if (pathname === "/api/owner/properties" && method === "POST") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          response = await createProperty(request, env, sessionUser!);
+        }
+      } else if (OWNER_PROPERTY_UNITS.test(pathname) && method === "POST") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          const [, propertyId] = pathname.match(OWNER_PROPERTY_UNITS)!;
+          response = await createUnit(request, env, sessionUser!, propertyId);
         }
       } else if (pathname === "/api/owner/tenants" && method === "POST") {
         const sessionUser = await resolveSession(request, env);
@@ -678,6 +708,35 @@ export default {
         } else {
           const [, id] = pathname.match(TENANT_DEPOSIT_DEDUCTION_RECEIPT)!;
           response = await getMyDeductionReceipt(env, sessionUser!, id);
+        }
+      } else if (pathname === "/api/tenant/notifications" && method === "GET") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["TENANT"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          response = await listMyNotifications(env, sessionUser!);
+        }
+      } else if (pathname === "/api/tenant/agreement" && method === "GET") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["TENANT"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          response = await getMyAgreement(env, sessionUser!);
+        }
+      } else if (pathname === "/api/tenant/unit" && method === "GET") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["TENANT"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          response = await getMyTenantUnit(env, sessionUser!);
+        }
+      } else if (TENANT_AGREEMENT_DOWNLOAD.test(pathname) && method === "GET") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["TENANT"])) {
+          response = new Response("Not authorized.", { status: 403 });
+        } else {
+          const [, id] = pathname.match(TENANT_AGREEMENT_DOWNLOAD)!;
+          response = await downloadMyAgreement(env, sessionUser!, id);
         }
       } else {
         response = json({ error: "Not found." }, 404);

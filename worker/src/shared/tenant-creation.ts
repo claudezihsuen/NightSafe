@@ -76,6 +76,15 @@ export async function createTenantForActor(
   if ("error" in scope) return json({ error: scope.error }, scope.status);
   const verifiedUnitId = scope.unit.id;
 
+  const activeLease = await env.DB.prepare(
+    "SELECT id FROM leases WHERE unit_id = ? AND status = 'ACTIVE'",
+  )
+    .bind(verifiedUnitId)
+    .first();
+  if (activeLease) {
+    return json({ error: "This unit already has an active tenant." }, 409);
+  }
+
   const existing = await getUserByEmail(env, email);
   if (existing) {
     return json({ error: "An account with this email already exists." }, 409);

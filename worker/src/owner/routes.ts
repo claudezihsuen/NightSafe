@@ -21,6 +21,86 @@ export async function listProperties(env: Env, actor: SessionUser): Promise<Resp
   return json({ properties });
 }
 
+/** POST /api/owner/properties (JSON: name, address) */
+export async function createProperty(request: Request, env: Env, actor: SessionUser): Promise<Response> {
+  const body = await request.json().catch(() => null);
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const address = typeof body?.address === "string" ? body.address.trim() : "";
+
+  if (!name || !address) {
+    return json({ error: "Name and address are required." }, 400);
+  }
+
+  const duplicate = await env.DB.prepare(
+    "SELECT id FROM properties WHERE owner_id = ? AND name = ? COLLATE NOCASE",
+  )
+    .bind(actor.id, name)
+    .first();
+  if (duplicate) {
+    return json({ error: "You already have a property with this name." }, 409);
+  }
+
+  const id = crypto.randomUUID();
+  const auditLogId = crypto.randomUUID();
+
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO properties (id, owner_id, name, address) VALUES (?, ?, ?, ?)").bind(
+      id,
+      actor.id,
+      name,
+      address,
+    ),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+       VALUES (?, ?, 'PROPERTY_CREATED', 'property', ?, ?)`,
+    ).bind(auditLogId, actor.id, id, JSON.stringify({ name })),
+  ]);
+
+  return json({ id, name, address }, 201);
+}
+
+/** POST /api/owner/properties/:id/units (JSON: label, monthlyRentDollars) */
+export async function createUnit(request: Request, env: Env, actor: SessionUser, propertyId: string): Promise<Response> {
+  const property = await getPropertyById(env, propertyId);
+  if (!property || property.owner_id !== actor.id) {
+    return json({ error: "Property not found." }, 404);
+  }
+
+  const body = await request.json().catch(() => null);
+  const label = typeof body?.label === "string" ? body.label.trim() : "";
+  const monthlyRentDollars = Number(body?.monthlyRentDollars);
+
+  if (!label) return json({ error: "Unit label is required." }, 400);
+  if (!Number.isFinite(monthlyRentDollars) || monthlyRentDollars < 0) {
+    return json({ error: "Monthly rent must be zero or a positive number." }, 400);
+  }
+
+  const duplicate = await env.DB.prepare(
+    "SELECT id FROM units WHERE property_id = ? AND label = ? COLLATE NOCASE",
+  )
+    .bind(propertyId, label)
+    .first();
+  if (duplicate) {
+    return json({ error: "This property already has a unit with this label." }, 409);
+  }
+
+  const id = crypto.randomUUID();
+  const monthlyRentCents = Math.round(monthlyRentDollars * 100);
+  const auditLogId = crypto.randomUUID();
+
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO units (id, property_id, label, monthly_rent) VALUES (?, ?, ?, ?)",
+    ).bind(id, propertyId, label, monthlyRentCents),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+       VALUES (?, ?, 'UNIT_CREATED', 'unit', ?, ?)`,
+    ).bind(auditLogId, actor.id, id, JSON.stringify({ propertyId, label })),
+  ]);
+
+  return json({ id, propertyId, label, monthlyRentCents }, 201);
+}
+
 /**
  * POST /api/owner/tenants (multipart/form-data)
  * Fields: name, email, phone?, propertyId, unitId, monthlyRent, leaseStartDate,
