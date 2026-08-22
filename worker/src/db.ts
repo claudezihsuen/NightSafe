@@ -60,7 +60,7 @@ export async function getUnitById(env: Env, id: string): Promise<UnitRow | null>
 /** Properties owned by this Owner, each with its units — for the tenant-creation picker. */
 export async function listOwnerPropertiesWithUnits(env: Env, ownerId: string) {
   const properties = await env.DB.prepare(
-    "SELECT * FROM properties WHERE owner_id = ? ORDER BY name",
+    "SELECT * FROM properties WHERE owner_id = ? AND archived_at IS NULL ORDER BY name",
   )
     .bind(ownerId)
     .all<PropertyRow>();
@@ -68,7 +68,7 @@ export async function listOwnerPropertiesWithUnits(env: Env, ownerId: string) {
   const units = await env.DB.prepare(
     `SELECT units.* FROM units
      JOIN properties ON properties.id = units.property_id
-     WHERE properties.owner_id = ?
+     WHERE properties.owner_id = ? AND units.archived_at IS NULL
      ORDER BY units.label`,
   )
     .bind(ownerId)

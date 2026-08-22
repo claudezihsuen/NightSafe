@@ -33,6 +33,7 @@ export interface PropertyRow {
   owner_id: string;
   name: string;
   address: string;
+  archived_at: string | null;
   created_at: string;
 }
 
@@ -41,5 +42,6 @@ export interface UnitRow {
   property_id: string;
   label: string;
   monthly_rent: number;
+  archived_at: string | null;
   created_at: string;
 }

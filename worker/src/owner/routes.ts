@@ -101,6 +101,193 @@ export async function createUnit(request: Request, env: Env, actor: SessionUser,
   return json({ id, propertyId, label, monthlyRentCents }, 201);
 }
 
+/** PATCH /api/owner/properties/:id (JSON: name?, address?) */
+export async function updateProperty(request: Request, env: Env, actor: SessionUser, propertyId: string): Promise<Response> {
+  const property = await getPropertyById(env, propertyId);
+  if (!property || property.owner_id !== actor.id) {
+    return json({ error: "Property not found." }, 404);
+  }
+
+  const body = await request.json().catch(() => null);
+  if (!body) return json({ error: "Invalid request body." }, 400);
+
+  const name = typeof body.name === "string" ? body.name.trim() : property.name;
+  const address = typeof body.address === "string" ? body.address.trim() : property.address;
+  if (!name || !address) return json({ error: "Name and address are required." }, 400);
+
+  if (name.toLowerCase() !== property.name.toLowerCase()) {
+    const duplicate = await env.DB.prepare(
+      "SELECT id FROM properties WHERE owner_id = ? AND name = ? COLLATE NOCASE AND id != ?",
+    )
+      .bind(actor.id, name, propertyId)
+      .first();
+    if (duplicate) return json({ error: "You already have a property with this name." }, 409);
+  }
+
+  await env.DB.prepare("UPDATE properties SET name = ?, address = ? WHERE id = ?")
+    .bind(name, address, propertyId)
+    .run();
+
+  return json({ ok: true });
+}
+
+/** POST /api/owner/properties/:id/archive — safe alternative when historical data blocks deletion. */
+export async function archiveProperty(env: Env, actor: SessionUser, propertyId: string): Promise<Response> {
+  const property = await getPropertyById(env, propertyId);
+  if (!property || property.owner_id !== actor.id) {
+    return json({ error: "Property not found." }, 404);
+  }
+  if (property.archived_at) return json({ error: "This property is already archived." }, 409);
+
+  const now = new Date().toISOString();
+  const auditLogId = crypto.randomUUID();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE properties SET archived_at = ? WHERE id = ?").bind(now, propertyId),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id) VALUES (?, ?, 'PROPERTY_ARCHIVED', 'property', ?)`,
+    ).bind(auditLogId, actor.id, propertyId),
+  ]);
+  return json({ ok: true });
+}
+
+/**
+ * DELETE /api/owner/properties/:id — only permitted when the property has
+ * zero units. A property with units is never hard-deleted (its units may
+ * carry leases/rent/deposit history); archive instead.
+ */
+export async function deleteProperty(env: Env, actor: SessionUser, propertyId: string): Promise<Response> {
+  const property = await getPropertyById(env, propertyId);
+  if (!property || property.owner_id !== actor.id) {
+    return json({ error: "Property not found." }, 404);
+  }
+
+  const unitCount = await env.DB.prepare("SELECT COUNT(*) AS n FROM units WHERE property_id = ?")
+    .bind(propertyId)
+    .first<{ n: number }>();
+
+  if ((unitCount?.n ?? 0) > 0) {
+    return json(
+      {
+        error: "This property cannot be permanently deleted because it contains units.",
+        canArchive: true,
+      },
+      409,
+    );
+  }
+
+  const auditLogId = crypto.randomUUID();
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM properties WHERE id = ?").bind(propertyId),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+       VALUES (?, ?, 'PROPERTY_DELETED', 'property', ?, ?)`,
+    ).bind(auditLogId, actor.id, propertyId, JSON.stringify({ name: property.name })),
+  ]);
+  return json({ ok: true });
+}
+
+async function getOwnedUnit(env: Env, actor: SessionUser, unitId: string) {
+  const row = await env.DB.prepare(
+    `SELECT units.* FROM units
+     JOIN properties ON properties.id = units.property_id
+     WHERE units.id = ? AND properties.owner_id = ?`,
+  )
+    .bind(unitId, actor.id)
+    .first<{ id: string; property_id: string; label: string; monthly_rent: number; archived_at: string | null }>();
+  return row ?? null;
+}
+
+/** PATCH /api/owner/units/:id (JSON: label?, monthlyRentDollars?) */
+export async function updateUnit(request: Request, env: Env, actor: SessionUser, unitId: string): Promise<Response> {
+  const unit = await getOwnedUnit(env, actor, unitId);
+  if (!unit) return json({ error: "Unit not found." }, 404);
+
+  const body = await request.json().catch(() => null);
+  if (!body) return json({ error: "Invalid request body." }, 400);
+
+  const label = typeof body.label === "string" ? body.label.trim() : unit.label;
+  const monthlyRentDollars =
+    body.monthlyRentDollars !== undefined ? Number(body.monthlyRentDollars) : unit.monthly_rent / 100;
+
+  if (!label) return json({ error: "Unit label is required." }, 400);
+  if (!Number.isFinite(monthlyRentDollars) || monthlyRentDollars < 0) {
+    return json({ error: "Monthly rent must be zero or a positive number." }, 400);
+  }
+
+  if (label.toLowerCase() !== unit.label.toLowerCase()) {
+    const duplicate = await env.DB.prepare(
+      "SELECT id FROM units WHERE property_id = ? AND label = ? COLLATE NOCASE AND id != ?",
+    )
+      .bind(unit.property_id, label, unitId)
+      .first();
+    if (duplicate) return json({ error: "This property already has a unit with this label." }, 409);
+  }
+
+  const monthlyRentCents = Math.round(monthlyRentDollars * 100);
+  await env.DB.prepare("UPDATE units SET label = ?, monthly_rent = ? WHERE id = ?")
+    .bind(label, monthlyRentCents, unitId)
+    .run();
+
+  return json({ ok: true });
+}
+
+/** POST /api/owner/units/:id/archive */
+export async function archiveUnit(env: Env, actor: SessionUser, unitId: string): Promise<Response> {
+  const unit = await getOwnedUnit(env, actor, unitId);
+  if (!unit) return json({ error: "Unit not found." }, 404);
+  if (unit.archived_at) return json({ error: "This unit is already archived." }, 409);
+
+  const now = new Date().toISOString();
+  const auditLogId = crypto.randomUUID();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE units SET archived_at = ? WHERE id = ?").bind(now, unitId),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id) VALUES (?, ?, 'UNIT_ARCHIVED', 'unit', ?)`,
+    ).bind(auditLogId, actor.id, unitId),
+  ]);
+  return json({ ok: true });
+}
+
+/**
+ * DELETE /api/owner/units/:id — only permitted when the unit has no lease
+ * history at all (active or past) and no assigned Unit Leader. Otherwise
+ * never hard-deleted; archive instead.
+ */
+export async function deleteUnit(env: Env, actor: SessionUser, unitId: string): Promise<Response> {
+  const unit = await getOwnedUnit(env, actor, unitId);
+  if (!unit) return json({ error: "Unit not found." }, 404);
+
+  const leaseCount = await env.DB.prepare("SELECT COUNT(*) AS n FROM leases WHERE unit_id = ?")
+    .bind(unitId)
+    .first<{ n: number }>();
+  if ((leaseCount?.n ?? 0) > 0) {
+    return json(
+      { error: "This unit cannot be permanently deleted because it has tenancy history.", canArchive: true },
+      409,
+    );
+  }
+
+  const leader = await env.DB.prepare("SELECT id FROM users WHERE unit_id = ? AND role = 'UNIT_LEADER'")
+    .bind(unitId)
+    .first();
+  if (leader) {
+    return json(
+      { error: "This unit cannot be deleted while a Unit Leader is assigned. Unassign them first.", canArchive: true },
+      409,
+    );
+  }
+
+  const auditLogId = crypto.randomUUID();
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM units WHERE id = ?").bind(unitId),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+       VALUES (?, ?, 'UNIT_DELETED', 'unit', ?, ?)`,
+    ).bind(auditLogId, actor.id, unitId, JSON.stringify({ label: unit.label })),
+  ]);
+  return json({ ok: true });
+}
+
 /**
  * POST /api/owner/tenants (multipart/form-data)
  * Fields: name, email, phone?, propertyId, unitId, monthlyRent, leaseStartDate,
@@ -543,3 +730,186 @@ export const deleteDepositDeductionRoute = depositRoutes.deleteDeductionRoute;
 export const recordDepositReturnRoute = depositRoutes.recordReturnRoute;
 export const getDepositDeductionReceiptRoute = depositRoutes.getDeductionReceipt;
 export const getDepositPaymentReceiptRoute = depositRoutes.getPaymentReceipt;
+
+export interface UnitLeaderRow {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  status: "ACTIVE" | "WAITING_FOR_ACTIVATION" | "INACTIVE";
+  unit_id: string | null;
+  unit_label: string | null;
+  property_name: string | null;
+  created_at: string;
+}
+
+/** GET /api/owner/unit-leaders — Unit Leaders this Owner created, with their current unit assignment. */
+export async function listUnitLeaders(env: Env, actor: SessionUser): Promise<Response> {
+  const { results } = await env.DB.prepare(
+    `SELECT leader.id, leader.name, leader.email, leader.phone, leader.status, leader.unit_id, leader.created_at,
+            units.label AS unit_label, properties.name AS property_name
+     FROM users AS leader
+     LEFT JOIN units ON units.id = leader.unit_id
+     LEFT JOIN properties ON properties.id = units.property_id
+     WHERE leader.role = 'UNIT_LEADER' AND leader.created_by = ?
+     ORDER BY leader.name`,
+  )
+    .bind(actor.id)
+    .all<UnitLeaderRow>();
+
+  return json({ unitLeaders: results ?? [] });
+}
+
+/** Active/pending Unit Leader currently holding a unit, if any (excludes deactivated leaders — their slot is free). */
+async function getCurrentUnitLeader(env: Env, unitId: string, excludeUserId?: string) {
+  const row = await env.DB.prepare(
+    `SELECT id, name FROM users
+     WHERE unit_id = ? AND role = 'UNIT_LEADER' AND status != 'INACTIVE' AND id != ?`,
+  )
+    .bind(unitId, excludeUserId ?? "")
+    .first<{ id: string; name: string }>();
+  return row ?? null;
+}
+
+/**
+ * POST /api/owner/unit-leaders (JSON: name, email, phone?, unitId, confirmReplace?)
+ * If the target unit already has an active/pending Unit Leader, this is
+ * blocked (409, with the current leader's name) unless confirmReplace is
+ * true — replacing means the previous leader's unit_id is cleared, since
+ * the existing architecture models one unit per leader via a single column.
+ */
+export async function createUnitLeader(request: Request, env: Env, actor: SessionUser): Promise<Response> {
+  const body = await request.json().catch(() => null);
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  const phone = typeof body?.phone === "string" && body.phone.trim() ? body.phone.trim() : null;
+  const unitId = typeof body?.unitId === "string" ? body.unitId : "";
+  const confirmReplace = body?.confirmReplace === true;
+
+  if (!name || !email || !unitId) {
+    return json({ error: "Name, email, and unit are required." }, 400);
+  }
+
+  const unit = await getOwnedUnit(env, actor, unitId);
+  if (!unit) return json({ error: "Unit not found." }, 404);
+
+  const existingUser = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
+  if (existingUser) {
+    return json({ error: "An account with this email already exists." }, 409);
+  }
+
+  const currentLeader = await getCurrentUnitLeader(env, unitId);
+  if (currentLeader && !confirmReplace) {
+    return json(
+      {
+        error: `This unit already has a Unit Leader (${currentLeader.name}).`,
+        currentLeader,
+        requiresConfirmation: true,
+      },
+      409,
+    );
+  }
+
+  const leaderId = crypto.randomUUID();
+  const inviteToken = generateToken();
+  const inviteTokenHash = await hashToken(inviteToken);
+  const inviteExpiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
+  const auditLogId = crypto.randomUUID();
+
+  const statements = [
+    env.DB.prepare(
+      `INSERT INTO users (id, email, name, phone, role, password_hash, status, created_by, unit_id)
+       VALUES (?, ?, ?, ?, 'UNIT_LEADER', NULL, 'WAITING_FOR_ACTIVATION', ?, ?)`,
+    ).bind(leaderId, email, name, phone, actor.id, unitId),
+    env.DB.prepare("INSERT INTO invitations (token_hash, user_id, expires_at) VALUES (?, ?, ?)").bind(
+      inviteTokenHash,
+      leaderId,
+      inviteExpiresAt,
+    ),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+       VALUES (?, ?, 'UNIT_LEADER_CREATED', 'user', ?, ?)`,
+    ).bind(auditLogId, actor.id, leaderId, JSON.stringify({ email, unitId, replacedLeaderId: currentLeader?.id ?? null })),
+  ];
+
+  if (currentLeader) {
+    statements.push(
+      env.DB.prepare("UPDATE users SET unit_id = NULL WHERE id = ?").bind(currentLeader.id),
+      env.DB.prepare(
+        `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+         VALUES (?, ?, 'UNIT_LEADER_UNASSIGNED', 'user', ?, ?)`,
+      ).bind(crypto.randomUUID(), actor.id, currentLeader.id, JSON.stringify({ unitId, replacedBy: leaderId })),
+    );
+  }
+
+  await env.DB.batch(statements);
+
+  return json(
+    {
+      unitLeader: { id: leaderId, name, email, phone, unitId },
+      inviteLink: `${env.FRONTEND_URL}/invite/${inviteToken}`,
+    },
+    201,
+  );
+}
+
+async function getOwnedUnitLeader(env: Env, actor: SessionUser, leaderId: string) {
+  const row = await env.DB.prepare(
+    "SELECT id, name, unit_id FROM users WHERE id = ? AND role = 'UNIT_LEADER' AND created_by = ?",
+  )
+    .bind(leaderId, actor.id)
+    .first<{ id: string; name: string; unit_id: string | null }>();
+  return row ?? null;
+}
+
+/**
+ * PATCH /api/owner/unit-leaders/:id/unit (JSON: unitId, confirmReplace?)
+ * Reassigns an existing Unit Leader to a (possibly different) unit, with
+ * the same already-assigned safeguard as creation.
+ */
+export async function reassignUnitLeader(request: Request, env: Env, actor: SessionUser, leaderId: string): Promise<Response> {
+  const leader = await getOwnedUnitLeader(env, actor, leaderId);
+  if (!leader) return json({ error: "Unit Leader not found." }, 404);
+
+  const body = await request.json().catch(() => null);
+  const unitId = typeof body?.unitId === "string" ? body.unitId : "";
+  const confirmReplace = body?.confirmReplace === true;
+  if (!unitId) return json({ error: "unitId is required." }, 400);
+
+  const unit = await getOwnedUnit(env, actor, unitId);
+  if (!unit) return json({ error: "Unit not found." }, 404);
+
+  const currentLeader = await getCurrentUnitLeader(env, unitId, leaderId);
+  if (currentLeader && !confirmReplace) {
+    return json(
+      {
+        error: `This unit already has a Unit Leader (${currentLeader.name}).`,
+        currentLeader,
+        requiresConfirmation: true,
+      },
+      409,
+    );
+  }
+
+  const auditLogId = crypto.randomUUID();
+  const statements = [
+    env.DB.prepare("UPDATE users SET unit_id = ? WHERE id = ?").bind(unitId, leaderId),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+       VALUES (?, ?, 'UNIT_LEADER_REASSIGNED', 'user', ?, ?)`,
+    ).bind(auditLogId, actor.id, leaderId, JSON.stringify({ fromUnitId: leader.unit_id, toUnitId: unitId })),
+  ];
+
+  if (currentLeader) {
+    statements.push(
+      env.DB.prepare("UPDATE users SET unit_id = NULL WHERE id = ?").bind(currentLeader.id),
+      env.DB.prepare(
+        `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+         VALUES (?, ?, 'UNIT_LEADER_UNASSIGNED', 'user', ?, ?)`,
+      ).bind(crypto.randomUUID(), actor.id, currentLeader.id, JSON.stringify({ unitId, replacedBy: leaderId })),
+    );
+  }
+
+  await env.DB.batch(statements);
+  return json({ ok: true });
+}

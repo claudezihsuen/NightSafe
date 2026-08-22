@@ -5,7 +5,16 @@ import { login, logout, me, getInvite, activate } from "./auth/routes";
 import {
   listProperties,
   createProperty,
+  updateProperty,
+  archiveProperty,
+  deleteProperty,
   createUnit,
+  updateUnit,
+  archiveUnit,
+  deleteUnit,
+  listUnitLeaders,
+  createUnitLeader,
+  reassignUnitLeader,
   createTenant,
   listAgents,
   createAgent,
@@ -100,6 +109,11 @@ const AGENT_PAYMENT_CONFIRM = /^\/api\/agent\/payments\/([^/]+)\/confirm$/;
 const AGENT_PAYMENT_REJECT = /^\/api\/agent\/payments\/([^/]+)\/reject$/;
 
 const OWNER_PROPERTY_UNITS = /^\/api\/owner\/properties\/([^/]+)\/units$/;
+const OWNER_PROPERTY_ARCHIVE = /^\/api\/owner\/properties\/([^/]+)\/archive$/;
+const OWNER_PROPERTY_ID = /^\/api\/owner\/properties\/([^/]+)$/;
+const OWNER_UNIT_ARCHIVE = /^\/api\/owner\/units\/([^/]+)\/archive$/;
+const OWNER_UNIT_ID = /^\/api\/owner\/units\/([^/]+)$/;
+const OWNER_UNIT_LEADER_UNIT = /^\/api\/owner\/unit-leaders\/([^/]+)\/unit$/;
 const OWNER_AGENT_ACTIVATE = /^\/api\/owner\/agents\/([^/]+)\/activate$/;
 const OWNER_AGENT_DEACTIVATE = /^\/api\/owner\/agents\/([^/]+)\/deactivate$/;
 const OWNER_AGENT_ASSIGNMENTS = /^\/api\/owner\/agents\/([^/]+)\/assignments$/;
@@ -192,6 +206,76 @@ export default {
         } else {
           const [, propertyId] = pathname.match(OWNER_PROPERTY_UNITS)!;
           response = await createUnit(request, env, sessionUser!, propertyId);
+        }
+      } else if (OWNER_PROPERTY_ARCHIVE.test(pathname) && method === "POST") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          const [, propertyId] = pathname.match(OWNER_PROPERTY_ARCHIVE)!;
+          response = await archiveProperty(env, sessionUser!, propertyId);
+        }
+      } else if (OWNER_PROPERTY_ID.test(pathname) && method === "PATCH") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          const [, propertyId] = pathname.match(OWNER_PROPERTY_ID)!;
+          response = await updateProperty(request, env, sessionUser!, propertyId);
+        }
+      } else if (OWNER_PROPERTY_ID.test(pathname) && method === "DELETE") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          const [, propertyId] = pathname.match(OWNER_PROPERTY_ID)!;
+          response = await deleteProperty(env, sessionUser!, propertyId);
+        }
+      } else if (OWNER_UNIT_ARCHIVE.test(pathname) && method === "POST") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          const [, unitId] = pathname.match(OWNER_UNIT_ARCHIVE)!;
+          response = await archiveUnit(env, sessionUser!, unitId);
+        }
+      } else if (OWNER_UNIT_ID.test(pathname) && method === "PATCH") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          const [, unitId] = pathname.match(OWNER_UNIT_ID)!;
+          response = await updateUnit(request, env, sessionUser!, unitId);
+        }
+      } else if (OWNER_UNIT_ID.test(pathname) && method === "DELETE") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          const [, unitId] = pathname.match(OWNER_UNIT_ID)!;
+          response = await deleteUnit(env, sessionUser!, unitId);
+        }
+      } else if (pathname === "/api/owner/unit-leaders" && method === "GET") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          response = await listUnitLeaders(env, sessionUser!);
+        }
+      } else if (pathname === "/api/owner/unit-leaders" && method === "POST") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          response = await createUnitLeader(request, env, sessionUser!);
+        }
+      } else if (OWNER_UNIT_LEADER_UNIT.test(pathname) && method === "PATCH") {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else {
+          const [, leaderId] = pathname.match(OWNER_UNIT_LEADER_UNIT)!;
+          response = await reassignUnitLeader(request, env, sessionUser!, leaderId);
         }
       } else if (pathname === "/api/owner/tenants" && method === "POST") {
         const sessionUser = await resolveSession(request, env);
