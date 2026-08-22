@@ -15,6 +15,7 @@ import { OwnerCreateTenant } from "@/pages/owner/OwnerCreateTenant";
 import { OwnerCreateAgent } from "@/pages/owner/OwnerCreateAgent";
 import { OwnerAgentDetail } from "@/pages/owner/OwnerAgentDetail";
 import { OwnerAgentsProvider } from "@/lib/owner-agents-context";
+import { OwnerUnitLeadersProvider } from "@/lib/owner-unit-leaders-context";
 import { OwnerPayments } from "@/pages/owner/OwnerPayments";
 import { OwnerPaymentReview } from "@/pages/owner/OwnerPaymentReview";
 import { OwnerPaymentsProvider } from "@/lib/owner-payments-context";
@@ -67,7 +68,9 @@ export default function App() {
               <OwnerPaymentsProvider>
                 <OwnerUtilitiesProvider>
                   <OwnerAgentsProvider>
-                    <OwnerLayout />
+                    <OwnerUnitLeadersProvider>
+                      <OwnerLayout />
+                    </OwnerUnitLeadersProvider>
                   </OwnerAgentsProvider>
                 </OwnerUtilitiesProvider>
               </OwnerPaymentsProvider>
