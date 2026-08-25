@@ -401,7 +401,7 @@ function PaymentForm({ itemId, onDone, onCancel }: { itemId: string; onDone: () 
 function AddItemForm({ leaseId, onDone, onCancel }: { leaseId: string; onDone: () => void; onCancel: () => void }) {
   const [type, setType] = useState<string>(DEPOSIT_TYPE_PRESETS[0]);
   const [customType, setCustomType] = useState("");
-  const [name, setName] = useState(DEPOSIT_TYPE_PRESETS[0]);
+  const [name, setName] = useState<string>(DEPOSIT_TYPE_PRESETS[0]);
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [unitAmount, setUnitAmount] = useState("");
