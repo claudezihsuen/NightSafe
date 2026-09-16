@@ -355,45 +355,181 @@ function ManagerPanel({ detail, prefix, saving, onSave, onEditFields, onReview, 
   detail: DetailResponse; prefix: string; saving: boolean; onSave: (form: HTMLFormElement) => Promise<void>; onEditFields: () => void; onReview: (status: "APPROVED" | "REJECTED") => Promise<void>; onReopen: () => void; onArchive: () => void; onDelete: () => void;
 }) {
   const doc = detail.document;
-  return <Card><h2 className="mb-3 font-semibold text-ink">Document controls</h2><form onSubmit={(event) => { event.preventDefault(); void onSave(event.currentTarget); }} className="space-y-3"><Input name="name" label="Name" defaultValue={doc.name} /><Input name="category" label="Category" defaultValue={doc.category ?? ""} /><Textarea name="description" label="Description" defaultValue={doc.description ?? ""} /><Textarea name="internalNotes" label="Internal notes" defaultValue={doc.internalNotes ?? ""} /><Input name="expiryDate" label="Expiry date" type="date" defaultValue={doc.expiryDate ?? ""} /><div className="grid gap-2 sm:grid-cols-2">{[["required","Required",doc.required],["tenantVisible","Tenant can view",doc.tenantVisible],["tenantDownload","Tenant can download",doc.tenantDownload],["tenantUpload","Tenant can upload",doc.tenantUpload],["tenantCanEdit","Tenant can edit",doc.tenantCanEdit],["tenantCanSign","Tenant can sign",doc.tenantCanSign]].map(([name,label,checked]) => <label key={String(name)} className="flex items-center gap-2 rounded-input border border-border px-3 py-2 text-sm"><input name={String(name)} type="checkbox" defaultChecked={Boolean(checked)} />{String(label)}</label>)}</div><Button type="submit" size="sm" loading={saving}>Save settings</Button></form><div className="mt-4 flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={onEditFields}>Configure fields</Button>{doc.status === "UNDER_REVIEW" && <><Button size="sm" onClick={() => void onReview("APPROVED")}>Approve</Button><Button size="sm" variant="danger" onClick={() => void onReview("REJECTED")}>Reject</Button></>}{doc.status === "COMPLETED" && <Button size="sm" variant="secondary" onClick={onReopen} icon={<RotateCcw className="h-4 w-4" />}>Reopen for Tenant</Button>}{doc.hasFile && <a href={`${API_URL}/api/${prefix}/documents/${doc.id}/download`}><Button size="sm" variant="ghost" icon={<Download className="h-4 w-4" />}>Download</Button></a>}<Button size="sm" variant="ghost" onClick={onArchive} icon={<Archive className="h-4 w-4" />}>Archive</Button><Button size="sm" variant="danger" onClick={onDelete} icon={<Trash2 className="h-4 w-4" />}>Delete</Button></div></Card>;
+  const canConfigureFields = doc.hasFile && doc.currentVersion > 0 && doc.status !== "COMPLETED" && doc.status !== "ARCHIVED";
+  return <Card><h2 className="mb-3 font-semibold text-ink">Document controls</h2><form onSubmit={(event) => { event.preventDefault(); void onSave(event.currentTarget); }} className="space-y-3"><Input name="name" label="Name" defaultValue={doc.name} /><Input name="category" label="Category" defaultValue={doc.category ?? ""} /><Textarea name="description" label="Description" defaultValue={doc.description ?? ""} /><Textarea name="internalNotes" label="Internal notes" defaultValue={doc.internalNotes ?? ""} /><Input name="expiryDate" label="Expiry date" type="date" defaultValue={doc.expiryDate ?? ""} /><div className="grid gap-2 sm:grid-cols-2">{[["required","Required",doc.required],["tenantVisible","Tenant can view",doc.tenantVisible],["tenantDownload","Tenant can download",doc.tenantDownload],["tenantUpload","Tenant can upload",doc.tenantUpload],["tenantCanEdit","Tenant can edit",doc.tenantCanEdit],["tenantCanSign","Tenant can sign",doc.tenantCanSign]].map(([name,label,checked]) => <label key={String(name)} className="flex items-center gap-2 rounded-input border border-border px-3 py-2 text-sm"><input name={String(name)} type="checkbox" defaultChecked={Boolean(checked)} />{String(label)}</label>)}</div><Button type="submit" size="sm" loading={saving}>Save settings</Button></form><div className="mt-4 flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={onEditFields} disabled={!canConfigureFields}>Configure fields</Button>{doc.status === "UNDER_REVIEW" && <><Button size="sm" onClick={() => void onReview("APPROVED")}>Approve</Button><Button size="sm" variant="danger" onClick={() => void onReview("REJECTED")}>Reject</Button></>}{doc.status === "COMPLETED" && <Button size="sm" variant="secondary" onClick={onReopen} icon={<RotateCcw className="h-4 w-4" />}>Reopen for Tenant</Button>}{doc.hasFile && <a href={`${API_URL}/api/${prefix}/documents/${doc.id}/download`}><Button size="sm" variant="ghost" icon={<Download className="h-4 w-4" />}>Download</Button></a>}<Button size="sm" variant="ghost" onClick={onArchive} icon={<Archive className="h-4 w-4" />}>Archive</Button><Button size="sm" variant="danger" onClick={onDelete} icon={<Trash2 className="h-4 w-4" />}>Delete</Button></div>{!doc.hasFile && <p className="mt-2 text-xs text-ink/50">Upload a source document before configuring fields.</p>}</Card>;
 }
 
 interface BuilderField { id: string; fieldType: DocumentField["field_type"]; label: string; required: boolean; pageNumber: number; x: number; y: number; width: number; height: number }
+
+const FIELD_BUILDER_TYPES: Array<{ type: BuilderField["fieldType"]; label: string; defaultLabel: string; width: number; height: number }> = [
+  { type: "TEXT", label: "Text", defaultLabel: "Text field", width: .36, height: .08 },
+  { type: "DATE", label: "Date", defaultLabel: "Date", width: .28, height: .08 },
+  { type: "CHECKBOX", label: "Checkbox", defaultLabel: "Checkbox", width: .12, height: .07 },
+  { type: "SIGNATURE", label: "Signature", defaultLabel: "Tenant Signature", width: .38, height: .12 },
+  { type: "INITIALS", label: "Initials", defaultLabel: "Tenant Initials", width: .22, height: .10 },
+];
+
 function FieldBuilder({ open, onClose, doc, initial, prefix, onSaved }: { open: boolean; onClose: () => void; doc: DocumentationItem; initial: DocumentField[]; prefix: string; onSaved: () => Promise<void> }) {
   const [fields, setFields] = useState<BuilderField[]>([]);
   const [saving, setSaving] = useState(false);
   const [previewPage, setPreviewPage] = useState(1);
+  const [dirty, setDirty] = useState(false);
+  const [builderError, setBuilderError] = useState<string | null>(null);
+
   useEffect(() => {
     if (open) {
       setFields(initial.map((field) => ({ id: field.id, fieldType: field.field_type, label: field.label, required: Boolean(field.required), pageNumber: field.page_number, x: field.x, y: field.y, width: field.width, height: field.height })));
       setPreviewPage(1);
+      setDirty(false);
+      setBuilderError(null);
     }
   }, [open, initial]);
+
   const maxPreviewPage = Math.max(1, previewPage, ...fields.map((field) => field.pageNumber));
-  function add() {
-    const index = fields.length;
-    setFields((current) => [...current, { id: crypto.randomUUID(), fieldType: "TEXT", label: `Field ${index + 1}`, required: true, pageNumber: previewPage, x: 0.08, y: Math.min(.82, .08 + (index % 6) * .13), width: .36, height: .08 }]);
+
+  function updateField(id: string, next: Partial<BuilderField>) {
+    setFields((items) => items.map((item) => item.id === id ? { ...item, ...next } : item));
+    setDirty(true);
   }
-  async function save() { setSaving(true); try { await api.put(`/api/${prefix}/documents/${doc.id}/fields`, { fields }); await onSaved(); onClose(); } finally { setSaving(false); } }
+
+  function add(type: BuilderField["fieldType"]) {
+    const preset = FIELD_BUILDER_TYPES.find((item) => item.type === type)!;
+    const sameTypeCount = fields.filter((field) => field.fieldType === type).length;
+    const label = sameTypeCount ? `${preset.defaultLabel} ${sameTypeCount + 1}` : preset.defaultLabel;
+    const index = fields.length;
+    setFields((current) => [...current, {
+      id: crypto.randomUUID(), fieldType: type, label, required: true, pageNumber: previewPage,
+      x: 0.08, y: Math.min(.84, .08 + (index % 6) * .13), width: preset.width, height: preset.height,
+    }]);
+    setDirty(true);
+  }
+
+  function removeField(id: string) {
+    setFields((items) => items.filter((item) => item.id !== id));
+    setDirty(true);
+  }
+
+  function requestClose() {
+    if (dirty && !window.confirm("Discard unsaved field layout changes?")) return;
+    onClose();
+  }
+
+  async function save() {
+    setBuilderError(null);
+    const badLabel = fields.find((field) => !field.label.trim() || field.label.trim().length > 160);
+    if (badLabel) {
+      setBuilderError("Every field needs a label between 1 and 160 characters.");
+      return;
+    }
+    const invalid = fields.find((field) => field.pageNumber < 1 || field.pageNumber > 999 || field.x < 0 || field.y < 0 || field.width <= 0 || field.height <= 0 || field.x + field.width > 1.001 || field.y + field.height > 1.001);
+    if (invalid) {
+      setBuilderError("One or more fields are outside the document page. Move or resize them before saving.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.put(`/api/${prefix}/documents/${doc.id}/fields`, { fields });
+      setDirty(false);
+      await onSaved();
+      onClose();
+    } catch (err) {
+      setBuilderError(err instanceof ApiError ? err.message : "Couldn't save the field configuration.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <Modal open={open} onClose={onClose} title="Configure Tenant fields" className="max-w-4xl max-h-[92vh] overflow-y-auto">
-      <p className="mb-4 text-sm text-ink/60">Positions use percentages of each document page. Navigate pages, drag each marker in the preview, then adjust its size and label below.</p>
-      <div className="relative mb-3 aspect-[3/4] max-h-[52vh] overflow-hidden rounded-card border border-border bg-sage-50">
+    <Modal open={open} onClose={requestClose} title="Configure Tenant fields" className="max-w-5xl max-h-[92vh] overflow-y-auto">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm text-ink/60">Add fields, drag them into position, and resize them directly on the current page. Positions are stored against document version {doc.currentVersion}.</p>
+          <p className="mt-1 text-xs text-ink/45">Fields are assigned to the Tenant completion workflow. Once the Tenant starts completing this version, the layout is locked.</p>
+        </div>
+        <span className="rounded-full bg-sage-50 px-3 py-1 text-xs font-medium text-sage-700">{fields.length} / 100 fields</span>
+      </div>
+
+      {builderError && <p className="mb-4 rounded-input bg-status-overdue/10 p-3 text-sm text-status-overdue">{builderError}</p>}
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {FIELD_BUILDER_TYPES.map((preset) => (
+          <Button key={preset.type} size="sm" variant="secondary" onClick={() => add(preset.type)} disabled={fields.length >= 100} icon={<Plus className="h-4 w-4" />}>
+            {preset.label}
+          </Button>
+        ))}
+      </div>
+
+      <div className="relative mb-3 aspect-[3/4] max-h-[56vh] overflow-hidden rounded-card border border-border bg-sage-50">
         <iframe src={`${API_URL}/api/${prefix}/documents/${doc.id}/view#page=${previewPage}&toolbar=0`} title={`Field layout preview page ${previewPage}`} className="pointer-events-none h-full w-full bg-white" />
-        {fields.filter((field) => field.pageNumber === previewPage).map((field, index) => <DraggableMarker key={field.id} field={field} index={index} onChange={(next) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, ...next } : item))} />)}
+        {fields.filter((field) => field.pageNumber === previewPage).map((field, index) => (
+          <DraggableMarker key={field.id} field={field} index={index} onChange={(next) => updateField(field.id, next)} />
+        ))}
       </div>
-      <div className="mb-4 flex items-center justify-center gap-3">
+
+      <div className="mb-4 flex flex-wrap items-center justify-center gap-3">
         <Button size="sm" variant="secondary" disabled={previewPage <= 1} onClick={() => setPreviewPage((value) => Math.max(1, value - 1))}>Previous page</Button>
-        <span className="text-sm text-ink/60">Page {previewPage} of {maxPreviewPage}</span>
-        <Button size="sm" variant="secondary" onClick={() => setPreviewPage((value) => value + 1)}>Next page</Button>
+        <label className="flex items-center gap-2 text-sm text-ink/60">Page <input aria-label="Preview page" type="number" min={1} max={999} value={previewPage} onChange={(event) => setPreviewPage(Math.max(1, Math.min(999, Number(event.target.value) || 1)))} className="w-16 rounded-input border border-border bg-white px-2 py-1 text-center text-ink" /> of {maxPreviewPage}</label>
+        <Button size="sm" variant="secondary" disabled={previewPage >= 999} onClick={() => setPreviewPage((value) => Math.min(999, value + 1))}>Next page</Button>
       </div>
-      <div className="space-y-3">{fields.map((field, index) => <Card key={field.id} className="p-3"><div className="grid gap-2 sm:grid-cols-6"><Select label="Type" value={field.fieldType} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, fieldType: e.target.value as BuilderField["fieldType"] } : item))}>{["TEXT","DATE","SIGNATURE","CHECKBOX","INITIALS"].map((type) => <option key={type}>{type}</option>)}</Select><Input label="Label" className="sm:col-span-2" value={field.label} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, label: e.target.value } : item))} /><Input label="Page" type="number" min="1" value={field.pageNumber} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, pageNumber: Math.max(1, Number(e.target.value)) } : item))} /><Input label="Width %" type="number" min="5" max="100" value={Math.round(field.width * 100)} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, width: Math.max(.05, Math.min(1 - item.x, Number(e.target.value) / 100)) } : item))} /><Input label="Height %" type="number" min="3" max="50" value={Math.round(field.height * 100)} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, height: Math.max(.03, Math.min(1 - item.y, Number(e.target.value) / 100)) } : item))} /></div><div className="mt-2 flex justify-between"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={field.required} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, required: e.target.checked } : item))} />Required</label><Button size="sm" variant="ghost" onClick={() => setFields((items) => items.filter((_, i) => i !== index))}>Remove</Button></div></Card>)}</div>
-      <div className="mt-4 flex flex-wrap justify-between gap-2"><Button variant="secondary" onClick={add} icon={<Plus className="h-4 w-4" />}>Add field to page {previewPage}</Button><div className="flex gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={() => void save()} loading={saving}>Save fields</Button></div></div>
+
+      <div className="space-y-3">
+        {fields.map((field, index) => (
+          <Card key={field.id} className="p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-sm font-medium text-ink">Field {index + 1} · {field.fieldType}</p>
+              <span className="text-xs text-ink/45">Page {field.pageNumber} · Tenant</span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-6">
+              <Select label="Type" value={field.fieldType} onChange={(e) => updateField(field.id, { fieldType: e.target.value as BuilderField["fieldType"] })}>{FIELD_BUILDER_TYPES.map((preset) => <option key={preset.type} value={preset.type}>{preset.label}</option>)}</Select>
+              <Input label="Label" maxLength={160} className="sm:col-span-2" value={field.label} onChange={(e) => updateField(field.id, { label: e.target.value })} />
+              <Input label="Page" type="number" min="1" max="999" value={field.pageNumber} onChange={(e) => updateField(field.id, { pageNumber: Math.max(1, Math.min(999, Number(e.target.value) || 1)) })} />
+              <Input label="Width %" type="number" min="5" max="100" value={Math.round(field.width * 100)} onChange={(e) => updateField(field.id, { width: Math.max(.05, Math.min(1 - field.x, Number(e.target.value) / 100 || .05)) })} />
+              <Input label="Height %" type="number" min="3" max="100" value={Math.round(field.height * 100)} onChange={(e) => updateField(field.id, { height: Math.max(.03, Math.min(1 - field.y, Number(e.target.value) / 100 || .03)) })} />
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={field.required} onChange={(e) => updateField(field.id, { required: e.target.checked })} />Required</label>
+              <Button size="sm" variant="ghost" onClick={() => removeField(field.id)}>Remove</Button>
+            </div>
+          </Card>
+        ))}
+        {fields.length === 0 && <div className="rounded-card border border-dashed border-border p-6 text-center text-sm text-ink/50">No fields configured yet. Add a field type above.</div>}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-ink/45">{dirty ? "Unsaved field layout changes" : "Field layout is up to date"}</p>
+        <div className="flex gap-2"><Button variant="secondary" onClick={requestClose}>Cancel</Button><Button onClick={() => void save()} loading={saving} disabled={!dirty}>Save field configuration</Button></div>
+      </div>
     </Modal>
   );
 }
 
 function DraggableMarker({ field, index, onChange }: { field: BuilderField; index: number; onChange: (value: Partial<BuilderField>) => void }) {
-  function move(event: React.PointerEvent<HTMLButtonElement>) { const parent = event.currentTarget.parentElement; if (!parent) return; const rect = parent.getBoundingClientRect(); const x = Math.max(0, Math.min(1 - field.width, (event.clientX - rect.left) / rect.width - field.width / 2)); const y = Math.max(0, Math.min(1 - field.height, (event.clientY - rect.top) / rect.height - field.height / 2)); onChange({ x, y }); }
-  return <button type="button" className="absolute z-10 touch-none rounded border-2 border-sage-600 bg-white/90 px-1 text-[10px] font-semibold text-sage-800 shadow-subtle" style={{ left: `${field.x * 100}%`, top: `${field.y * 100}%`, width: `${field.width * 100}%`, height: `${field.height * 100}%` }} onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)} onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) move(e); }} onPointerUp={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}>{index + 1}. {field.label}</button>;
+  function canvasRect(target: HTMLElement): DOMRect | null {
+    const marker = target.parentElement;
+    const canvas = marker?.parentElement;
+    return canvas?.getBoundingClientRect() ?? null;
+  }
+
+  function move(event: React.PointerEvent<HTMLButtonElement>) {
+    const rect = canvasRect(event.currentTarget);
+    if (!rect) return;
+    const x = Math.max(0, Math.min(1 - field.width, (event.clientX - rect.left) / rect.width - field.width / 2));
+    const y = Math.max(0, Math.min(1 - field.height, (event.clientY - rect.top) / rect.height - field.height / 2));
+    onChange({ x, y });
+  }
+
+  function resize(event: React.PointerEvent<HTMLButtonElement>) {
+    const rect = canvasRect(event.currentTarget);
+    if (!rect) return;
+    const width = Math.max(.05, Math.min(1 - field.x, (event.clientX - rect.left) / rect.width - field.x));
+    const height = Math.max(.03, Math.min(1 - field.y, (event.clientY - rect.top) / rect.height - field.y));
+    onChange({ width, height });
+  }
+
+  return (
+    <div className="absolute z-10 touch-none rounded border-2 border-sage-600 bg-white/90 text-[10px] font-semibold text-sage-800 shadow-subtle" style={{ left: `${field.x * 100}%`, top: `${field.y * 100}%`, width: `${field.width * 100}%`, height: `${field.height * 100}%`, minWidth: 28, minHeight: 24 }}>
+      <button type="button" aria-label={`Move ${field.label}`} className="h-full w-full cursor-move overflow-hidden px-1 text-left" onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)} onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) move(e); }} onPointerUp={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}>{index + 1}. {field.label}</button>
+      <button type="button" aria-label={`Resize ${field.label}`} className="absolute bottom-0 right-0 h-5 w-5 cursor-se-resize rounded-tl bg-sage-600/90 text-[9px] text-white" onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) resize(e); }} onPointerUp={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}>↘</button>
+    </div>
+  );
 }
