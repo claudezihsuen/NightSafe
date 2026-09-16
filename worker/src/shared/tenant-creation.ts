@@ -78,6 +78,9 @@ export async function createTenantForActor(
 
   const scope = await verifyScope(env, propertyId, unitId);
   if ("error" in scope) return json({ error: scope.error }, scope.status);
+  if (scope.property.archived_at || scope.unit.archived_at) {
+    return json({ error: "Archived properties or units cannot accept a new tenant." }, 409);
+  }
   const verifiedUnitId = scope.unit.id;
 
   const activeLease = await env.DB.prepare(
