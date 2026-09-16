@@ -1,6 +1,7 @@
 import type { Env, SessionUser } from "../types";
 import { generateToken } from "../auth/session";
 import { hashToken } from "../auth/hash";
+import { isPrimaryAdmin } from "../db";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -25,7 +26,17 @@ export interface AdminUserRow {
 /** GET /api/admin/users — every account in the system. Never includes password_hash. */
 export async function listUsers(env: Env): Promise<Response> {
   const { results } = await env.DB.prepare(
-    "SELECT id, email, name, phone, role, status, created_at FROM users ORDER BY role, name",
+    `SELECT
+       u.id,
+       u.email,
+       u.name,
+       u.phone,
+       CASE WHEN pa.user_id IS NOT NULL THEN 'SUPER_ADMIN' ELSE u.role END AS role,
+       u.status,
+       u.created_at
+     FROM users u
+     LEFT JOIN primary_admins pa ON pa.user_id = u.id
+     ORDER BY role, u.name`,
   ).all<AdminUserRow>();
 
   return json({ users: results ?? [] });
@@ -106,11 +117,13 @@ export async function initiatePasswordReset(
   actor: SessionUser,
   targetUserId: string,
 ): Promise<Response> {
-  const target = await env.DB.prepare("SELECT id, name, role, status FROM users WHERE id = ?")
+  const target = await env.DB.prepare("SELECT id, name, status FROM users WHERE id = ?")
     .bind(targetUserId)
-    .first<{ id: string; name: string; role: string; status: string }>();
+    .first<{ id: string; name: string; status: string }>();
   if (!target) return json({ error: "Account not found." }, 404);
-  if (target.role === "SUPER_ADMIN" && actor.role !== "SUPER_ADMIN") {
+
+  const targetIsPrimaryAdmin = await isPrimaryAdmin(env, targetUserId);
+  if (targetIsPrimaryAdmin && actor.role !== "SUPER_ADMIN") {
     return json({ error: "The primary administrator account can only be managed by itself." }, 403);
   }
   if (target.status === "WAITING_FOR_ACTIVATION") {
@@ -162,11 +175,11 @@ export async function setUserStatus(
     return json({ error: "status must be ACTIVE or INACTIVE." }, 400);
   }
 
-  const target = await env.DB.prepare("SELECT id, role, status FROM users WHERE id = ?")
+  const target = await env.DB.prepare("SELECT id, status FROM users WHERE id = ?")
     .bind(targetUserId)
-    .first<{ id: string; role: string; status: string }>();
+    .first<{ id: string; status: string }>();
   if (!target) return json({ error: "Account not found." }, 404);
-  if (target.role === "SUPER_ADMIN") {
+  if (await isPrimaryAdmin(env, targetUserId)) {
     return json({ error: "The primary administrator account cannot be disabled here." }, 403);
   }
   if (target.status === "WAITING_FOR_ACTIVATION") {
