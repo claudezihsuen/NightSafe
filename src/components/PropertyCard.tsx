@@ -31,7 +31,7 @@ export function PropertyCard({ name, address, units, onClick, className }: Prope
           <span className="truncate">{address}</span>
         </div>
         <p className="mt-2 text-xs font-medium text-sage-700">
-          {units} {units === 1 ? "unit" : "units"}
+          {`${units} ${units === 1 ? "unit" : "units"}`}
         </p>
       </div>
       {onClick && <ChevronRight className="mt-2.5 h-4 w-4 shrink-0 text-ink/30" />}
