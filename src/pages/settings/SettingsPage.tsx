@@ -118,7 +118,8 @@ export function SettingsPage() {
 
   async function changePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const currentPassword = String(form.get("currentPassword") ?? "");
     const newPassword = String(form.get("newPassword") ?? "");
     const confirmPassword = String(form.get("confirmPassword") ?? "");
@@ -130,7 +131,7 @@ export function SettingsPage() {
     setPasswordSaving(true);
     try {
       await api.post("/api/account/password", { currentPassword, newPassword });
-      event.currentTarget.reset();
+      formElement.reset();
       setPasswordFeedback({ type: "success", text: t("settings.passwordSaved") });
       await loadDevices();
     } catch (error) {
@@ -258,7 +259,8 @@ export function SettingsPage() {
 
   async function disableTwoFactor(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setTwoFactorSaving(true);
     setTwoFactorFeedback(null);
     try {
@@ -266,7 +268,7 @@ export function SettingsPage() {
         currentPassword: String(form.get("currentPassword") ?? ""),
         code: String(form.get("code") ?? ""),
       });
-      event.currentTarget.reset();
+      formElement.reset();
       await refresh();
       setTwoFactorFeedback({ type: "success", text: t("settings.twoFactorDisabled") });
     } catch (error) {
