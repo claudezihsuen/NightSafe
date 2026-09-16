@@ -1,8 +1,10 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth-context";
+import { I18nProvider } from "@/i18n/I18nProvider";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { ActivateAccountPage } from "@/pages/auth/ActivateAccountPage";
+import { SettingsPage } from "@/pages/settings/SettingsPage";
 import { AdminLayout } from "@/layouts/AdminLayout";
 import { AdminUsers } from "@/pages/admin/AdminUsers";
 import { AdminProvider } from "@/lib/admin-context";
@@ -56,68 +58,75 @@ import { DocumentDetailPage } from "@/pages/documentation/DocumentDetailPage";
 export default function App() {
   return (
     <AuthProvider>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/invite/:token" element={<ActivateAccountPage />} />
+      <I18nProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/invite/:token" element={<ActivateAccountPage />} />
 
-        <Route path="/admin" element={<ProtectedRoute allowedRoles={["SUPER_ADMIN", "ADMIN"]}><AdminProvider><AdminLayout /></AdminProvider></ProtectedRoute>}>
-          <Route index element={<AdminUsers />} />
-        </Route>
+          <Route path="/admin" element={<ProtectedRoute allowedRoles={["SUPER_ADMIN", "ADMIN"]}><AdminProvider><AdminLayout /></AdminProvider></ProtectedRoute>}>
+            <Route index element={<AdminUsers />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
 
-        <Route path="/owner" element={<ProtectedRoute allowedRoles={["OWNER"]}><OwnerPaymentsProvider><OwnerUtilitiesProvider><OwnerAgentsProvider><OwnerUnitLeadersProvider><OwnerLayout /></OwnerUnitLeadersProvider></OwnerAgentsProvider></OwnerUtilitiesProvider></OwnerPaymentsProvider></ProtectedRoute>}>
-          <Route index element={<OwnerDashboard />} />
-          <Route path="properties" element={<OwnerProperties />} />
-          <Route path="properties/:id" element={<OwnerPropertyDetail />} />
-          <Route path="people" element={<OwnerPeople />} />
-          <Route path="people/new" element={<OwnerCreateTenant />} />
-          <Route path="agents/new" element={<OwnerCreateAgent />} />
-          <Route path="agents/:id" element={<OwnerAgentDetail />} />
-          <Route path="payments" element={<OwnerPayments />} />
-          <Route path="payments/:id" element={<OwnerPaymentReview />} />
-          <Route path="utilities/:id" element={<OwnerUtilityReview />} />
-          <Route path="leases/:leaseId/deposit" element={<OwnerDepositManagement />} />
-          <Route path="documentation" element={<DocumentationPage />} />
-          <Route path="documentation/:documentId" element={<DocumentDetailPage />} />
-          <Route path="agreements" element={<Navigate to="/owner/documentation" replace />} />
-          <Route path="lifecycle" element={<OwnerTenantLifecycle />} />
-        </Route>
+          <Route path="/owner" element={<ProtectedRoute allowedRoles={["OWNER"]}><OwnerPaymentsProvider><OwnerUtilitiesProvider><OwnerAgentsProvider><OwnerUnitLeadersProvider><OwnerLayout /></OwnerUnitLeadersProvider></OwnerAgentsProvider></OwnerUtilitiesProvider></OwnerPaymentsProvider></ProtectedRoute>}>
+            <Route index element={<OwnerDashboard />} />
+            <Route path="properties" element={<OwnerProperties />} />
+            <Route path="properties/:id" element={<OwnerPropertyDetail />} />
+            <Route path="people" element={<OwnerPeople />} />
+            <Route path="people/new" element={<OwnerCreateTenant />} />
+            <Route path="agents/new" element={<OwnerCreateAgent />} />
+            <Route path="agents/:id" element={<OwnerAgentDetail />} />
+            <Route path="payments" element={<OwnerPayments />} />
+            <Route path="payments/:id" element={<OwnerPaymentReview />} />
+            <Route path="utilities/:id" element={<OwnerUtilityReview />} />
+            <Route path="leases/:leaseId/deposit" element={<OwnerDepositManagement />} />
+            <Route path="documentation" element={<DocumentationPage />} />
+            <Route path="documentation/:documentId" element={<DocumentDetailPage />} />
+            <Route path="agreements" element={<Navigate to="/owner/documentation" replace />} />
+            <Route path="lifecycle" element={<OwnerTenantLifecycle />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
 
-        <Route path="/agent" element={<ProtectedRoute allowedRoles={["AGENT"]}><AgentDataProvider><AgentPaymentsProvider><AgentUtilitiesProvider><AgentLayout /></AgentUtilitiesProvider></AgentPaymentsProvider></AgentDataProvider></ProtectedRoute>}>
-          <Route index element={<AgentDashboard />} />
-          <Route path="properties" element={<AgentProperties />} />
-          <Route path="tenants" element={<AgentTenants />} />
-          <Route path="tenants/new" element={<AgentCreateTenant />} />
-          <Route path="payments" element={<AgentPayments />} />
-          <Route path="payments/:id" element={<AgentPaymentReview />} />
-          <Route path="utilities/:id" element={<AgentUtilityReview />} />
-          <Route path="leases/:leaseId/deposit" element={<AgentDepositManagement />} />
-          <Route path="documentation" element={<DocumentationPage />} />
-          <Route path="documentation/:documentId" element={<DocumentDetailPage />} />
-        </Route>
+          <Route path="/agent" element={<ProtectedRoute allowedRoles={["AGENT"]}><AgentDataProvider><AgentPaymentsProvider><AgentUtilitiesProvider><AgentLayout /></AgentUtilitiesProvider></AgentPaymentsProvider></AgentDataProvider></ProtectedRoute>}>
+            <Route index element={<AgentDashboard />} />
+            <Route path="properties" element={<AgentProperties />} />
+            <Route path="tenants" element={<AgentTenants />} />
+            <Route path="tenants/new" element={<AgentCreateTenant />} />
+            <Route path="payments" element={<AgentPayments />} />
+            <Route path="payments/:id" element={<AgentPaymentReview />} />
+            <Route path="utilities/:id" element={<AgentUtilityReview />} />
+            <Route path="leases/:leaseId/deposit" element={<AgentDepositManagement />} />
+            <Route path="documentation" element={<DocumentationPage />} />
+            <Route path="documentation/:documentId" element={<DocumentDetailPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
 
-        <Route path="/unit-leader" element={<ProtectedRoute allowedRoles={["UNIT_LEADER"]}><UnitLeaderProvider><UnitLeaderLayout /></UnitLeaderProvider></ProtectedRoute>}>
-          <Route index element={<UnitLeaderDashboard />} />
-          <Route path="water" element={<UnitLeaderWater />} />
-          <Route path="electricity" element={<UnitLeaderElectricity />} />
-          <Route path="notifications" element={<UnitLeaderNotifications />} />
-          <Route path="history" element={<UnitLeaderHistory />} />
-        </Route>
+          <Route path="/unit-leader" element={<ProtectedRoute allowedRoles={["UNIT_LEADER"]}><UnitLeaderProvider><UnitLeaderLayout /></UnitLeaderProvider></ProtectedRoute>}>
+            <Route index element={<UnitLeaderDashboard />} />
+            <Route path="water" element={<UnitLeaderWater />} />
+            <Route path="electricity" element={<UnitLeaderElectricity />} />
+            <Route path="notifications" element={<UnitLeaderNotifications />} />
+            <Route path="history" element={<UnitLeaderHistory />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
 
-        <Route path="/tenant" element={<ProtectedRoute allowedRoles={["TENANT"]}><TenantPaymentsProvider><TenantLayout /></TenantPaymentsProvider></ProtectedRoute>}>
-          <Route index element={<TenantHome />} />
-          <Route path="payments" element={<TenantPayments />} />
-          <Route path="payments/:id" element={<TenantPaymentDetails />} />
-          <Route path="payments/:id/pay" element={<TenantMakePayment />} />
-          <Route path="documentation" element={<DocumentationPage />} />
-          <Route path="documentation/:documentId" element={<DocumentDetailPage />} />
-          <Route path="agreement" element={<Navigate to="/tenant/documentation" replace />} />
-          <Route path="deposit" element={<TenantDeposit />} />
-          <Route path="notifications" element={<TenantNotifications />} />
-        </Route>
+          <Route path="/tenant" element={<ProtectedRoute allowedRoles={["TENANT"]}><TenantPaymentsProvider><TenantLayout /></TenantPaymentsProvider></ProtectedRoute>}>
+            <Route index element={<TenantHome />} />
+            <Route path="payments" element={<TenantPayments />} />
+            <Route path="payments/:id" element={<TenantPaymentDetails />} />
+            <Route path="payments/:id/pay" element={<TenantMakePayment />} />
+            <Route path="documentation" element={<DocumentationPage />} />
+            <Route path="documentation/:documentId" element={<DocumentDetailPage />} />
+            <Route path="agreement" element={<Navigate to="/tenant/documentation" replace />} />
+            <Route path="deposit" element={<TenantDeposit />} />
+            <Route path="notifications" element={<TenantNotifications />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
 
-        <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </I18nProvider>
     </AuthProvider>
   );
 }
