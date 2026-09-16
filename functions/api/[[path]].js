@@ -1,5 +1,6 @@
 const PRODUCTION_API = "https://nightsafe-api.claude-zihsuen.workers.dev";
 const STAGING_API = "https://nightsafe-staging.claude-zihsuen.workers.dev";
+const PRODUCTION_PAGES_HOST = "nightsafe.pages.dev";
 const PRODUCTION_WORKER_ORIGIN = "https://nightsafe.pages.dev";
 const STAGING_WORKER_ORIGIN = "https://development.nightsafe.pages.dev";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -13,12 +14,20 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
  * the canonical frontend origin expected by the Worker, preserving the
  * Worker's existing Origin/CSRF checks while allowing a future custom Pages
  * domain without third-party cookies.
+ *
+ * Safety rule: every Cloudflare Pages preview hostname
+ * (`<branch-or-hash>.nightsafe.pages.dev`) uses staging. Only the bare
+ * production Pages hostname, or a future custom production domain, may use
+ * the production API. This prevents a preview branch from touching production
+ * data by default.
  */
 export async function onRequest(context) {
   const incomingUrl = new URL(context.request.url);
-  const isStagingPreview = incomingUrl.hostname === "development.nightsafe.pages.dev";
-  const upstreamOrigin = isStagingPreview ? STAGING_API : PRODUCTION_API;
-  const canonicalFrontendOrigin = isStagingPreview ? STAGING_WORKER_ORIGIN : PRODUCTION_WORKER_ORIGIN;
+  const hostname = incomingUrl.hostname.toLowerCase();
+  const isPagesPreview = hostname.endsWith(`.${PRODUCTION_PAGES_HOST}`) && hostname !== PRODUCTION_PAGES_HOST;
+  const useStaging = isPagesPreview;
+  const upstreamOrigin = useStaging ? STAGING_API : PRODUCTION_API;
+  const canonicalFrontendOrigin = useStaging ? STAGING_WORKER_ORIGIN : PRODUCTION_WORKER_ORIGIN;
   const upstreamUrl = new URL(incomingUrl.pathname + incomingUrl.search, upstreamOrigin);
 
   if (!SAFE_METHODS.has(context.request.method)) {
@@ -35,7 +44,7 @@ export async function onRequest(context) {
   const headers = new Headers(context.request.headers);
   headers.delete("host");
   headers.set("Origin", canonicalFrontendOrigin);
-  headers.set("X-NightSafe-Proxy", isStagingPreview ? "staging-pages" : "production-pages");
+  headers.set("X-NightSafe-Proxy", useStaging ? "staging-pages" : "production-pages");
 
   const init = {
     method: context.request.method,
