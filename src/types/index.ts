@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 
 export type Role = "SUPER_ADMIN" | "ADMIN" | "OWNER" | "AGENT" | "UNIT_LEADER" | "TENANT";
+export type Language = "EN" | "ZH" | "TA";
 
 export type PaymentStatus =
   | "WAITING_PAYMENT"
@@ -14,7 +15,14 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  nickname: string | null;
+  language: Language;
+  phone: string | null;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  twoFactorEnabled: boolean;
   role: Role;
+  unitId?: string | null;
 }
 
 export interface OwnerUnit {
