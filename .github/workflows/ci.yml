@@ -24,7 +24,7 @@ jobs:
         run: npm run build
 
   worker:
-    name: Worker typecheck and bundle
+    name: Worker checks and D1 invariants
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -43,3 +43,5 @@ jobs:
         run: npm run typecheck
       - name: Bundle Worker without deploying
         run: npm run bundle:check
+      - name: Test D1 business invariants
+        run: npm run test:invariants
