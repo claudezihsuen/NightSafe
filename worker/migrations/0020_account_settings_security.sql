@@ -1,4 +1,4 @@
--- Account preferences, verification, two-factor authentication, and device sessions.
+-- Account preferences, verification, two-factor authentication, recovery, and device sessions.
 -- Existing emails are treated as verified because existing accounts were already
 -- activated through NightSafe's invitation/account-activation flow.
 
@@ -23,6 +23,7 @@ ALTER TABLE sessions ADD COLUMN user_agent TEXT;
 ALTER TABLE sessions ADD COLUMN device_name TEXT;
 ALTER TABLE sessions ADD COLUMN country TEXT;
 ALTER TABLE sessions ADD COLUMN last_seen_at TEXT;
+ALTER TABLE sessions ADD COLUMN remember_me INTEGER NOT NULL DEFAULT 0;
 
 UPDATE sessions
 SET device_id = lower(hex(randomblob(16))),
@@ -53,6 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_account_verifications_user
 CREATE TABLE IF NOT EXISTS two_factor_login_challenges (
   token_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  remember_me INTEGER NOT NULL DEFAULT 0,
   attempts INTEGER NOT NULL DEFAULT 0,
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -60,3 +62,22 @@ CREATE TABLE IF NOT EXISTS two_factor_login_challenges (
 
 CREATE INDEX IF NOT EXISTS idx_two_factor_login_user
   ON two_factor_login_challenges(user_id, expires_at);
+
+CREATE TABLE IF NOT EXISTS password_reset_challenges (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  method TEXT NOT NULL CHECK (method IN ('EMAIL', 'PHONE', 'AUTHENTICATOR')),
+  code_hash TEXT,
+  reset_token_hash TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  expires_at TEXT NOT NULL,
+  verified_at TEXT,
+  used_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_user
+  ON password_reset_challenges(user_id, expires_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_password_reset_token
+  ON password_reset_challenges(reset_token_hash)
+  WHERE reset_token_hash IS NOT NULL;
