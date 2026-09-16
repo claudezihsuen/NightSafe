@@ -22,6 +22,8 @@ import { Modal } from "@/components/ui/Modal";
 type Tool = "PAN" | "CROP" | "DRAW" | "ERASE" | "HIGHLIGHT" | "REDACT" | "BLUR" | "TEXT";
 type Corner = "nw" | "ne" | "sw" | "se";
 interface Box { x: number; y: number; width: number; height: number }
+interface TextItem { id: string; text: string; x: number; y: number; size: number }
+interface EditorState { canvas: string; textItems: TextItem[] }
 
 interface DocumentCanvasEditorProps {
   open: boolean;
@@ -31,7 +33,7 @@ interface DocumentCanvasEditorProps {
 }
 
 const MAX_DIM = 1800;
-const HISTORY_LIMIT = 10;
+const HISTORY_LIMIT = 8;
 
 function canvasFile(canvas: HTMLCanvasElement): Promise<File | null> {
   return new Promise((resolve) => {
@@ -47,39 +49,48 @@ function cloneCanvas(source: HTMLCanvasElement) {
   return copy;
 }
 
+function copyTextItems(items: TextItem[]) {
+  return items.map((item) => ({ ...item }));
+}
+
 export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCanvasEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imageUrlRef = useRef<string | null>(null);
   const originalRef = useRef<string | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const textDragRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
   const drawingBaseRef = useRef<HTMLCanvasElement | null>(null);
   const [tool, setTool] = useState<Tool>("PAN");
   const [zoom, setZoom] = useState(1);
-  const [history, setHistory] = useState<string[]>([]);
-  const [future, setFuture] = useState<string[]>([]);
+  const [history, setHistory] = useState<EditorState[]>([]);
+  const [future, setFuture] = useState<EditorState[]>([]);
   const [selection, setSelection] = useState<Box | null>(null);
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(100);
   const [grayscale, setGrayscale] = useState(false);
   const [text, setText] = useState("");
   const [textSize, setTextSize] = useState(32);
+  const [textItems, setTextItems] = useState<TextItem[]>([]);
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [strokeWidth, setStrokeWidth] = useState(8);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
 
-  function currentSnapshot() {
-    return canvasRef.current?.toDataURL("image/png") ?? null;
+  function currentState(): EditorState | null {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    return { canvas: canvas.toDataURL("image/png"), textItems: copyTextItems(textItems) };
   }
 
   function pushHistory() {
-    const snapshot = currentSnapshot();
-    if (!snapshot) return;
-    setHistory((items) => [...items.slice(-(HISTORY_LIMIT - 1)), snapshot]);
+    const state = currentState();
+    if (!state) return;
+    setHistory((items) => [...items.slice(-(HISTORY_LIMIT - 1)), state]);
     setFuture([]);
   }
 
-  function restore(dataUrl: string) {
+  function restore(state: EditorState) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const image = new Image();
@@ -92,13 +103,17 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
       setSelection(null);
       drawingBaseRef.current = null;
     };
-    image.src = dataUrl;
+    image.src = state.canvas;
+    setTextItems(copyTextItems(state.textItems));
+    setSelectedTextId(null);
   }
 
   useEffect(() => {
     if (!open || !file) return;
     setMessage(null);
     setPreviewMode(false);
+    setTextItems([]);
+    setSelectedTextId(null);
     if (!file.type.startsWith("image/")) {
       setMessage("Canvas editing is available for JPG and PNG images. PDF documents remain viewable but are not rasterized in the browser editor.");
       return;
@@ -130,6 +145,8 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
       setText("");
       setTextSize(32);
       setStrokeWidth(8);
+      setTextItems([]);
+      setSelectedTextId(null);
       URL.revokeObjectURL(url);
       imageUrlRef.current = null;
     };
@@ -148,6 +165,17 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
   function point(event: React.PointerEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+    };
+  }
+
+  function pointFromWrapper(event: React.PointerEvent<HTMLElement>) {
+    const canvas = canvasRef.current;
+    const wrapper = event.currentTarget.parentElement;
+    if (!canvas || !wrapper) return { x: 0, y: 0 };
+    const rect = wrapper.getBoundingClientRect();
     return {
       x: ((event.clientX - rect.left) / rect.width) * canvas.width,
       y: ((event.clientY - rect.top) / rect.height) * canvas.height,
@@ -173,13 +201,10 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
         return;
       }
       pushHistory();
-      resetDrawingSession();
-      const ctx = canvasRef.current?.getContext("2d");
-      if (!ctx) return;
-      ctx.fillStyle = "#111827";
-      ctx.font = `${Math.max(12, textSize)}px sans-serif`;
-      ctx.fillText(text.trim(), p.x, p.y);
-      setMessage("Text placed. Use Undo if you want to remove or reposition it.");
+      const item: TextItem = { id: crypto.randomUUID(), text: text.trim(), x: p.x, y: p.y, size: Math.max(12, textSize) };
+      setTextItems((items) => [...items, item]);
+      setSelectedTextId(item.id);
+      setMessage("Text placed. Drag it to move, adjust the size, or delete it before saving.");
       return;
     }
     pushHistory();
@@ -243,11 +268,41 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
     if (tool === "DRAW" || tool === "ERASE") setSelection(null);
   }
 
+  function startTextDrag(item: TextItem, event: React.PointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    pushHistory();
+    const p = pointFromWrapper(event);
+    textDragRef.current = { id: item.id, offsetX: p.x - item.x, offsetY: p.y - item.y };
+    setSelectedTextId(item.id);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveText(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = textDragRef.current;
+    const canvas = canvasRef.current;
+    if (!drag || !canvas || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.preventDefault();
+    const p = pointFromWrapper(event);
+    setTextItems((items) => items.map((item) => item.id === drag.id ? {
+      ...item,
+      x: Math.max(0, Math.min(canvas.width, p.x - drag.offsetX)),
+      y: Math.max(0, Math.min(canvas.height, p.y - drag.offsetY)),
+    } : item));
+  }
+
+  function endTextDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    textDragRef.current = null;
+  }
+
   function rotate(direction: 1 | -1) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     pushHistory();
     resetDrawingSession();
+    const oldWidth = canvas.width;
+    const oldHeight = canvas.height;
     const source = cloneCanvas(canvas);
     canvas.width = source.height;
     canvas.height = source.width;
@@ -258,6 +313,9 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.rotate(direction * Math.PI / 2);
     ctx.drawImage(source, -source.width / 2, -source.height / 2);
+    setTextItems((items) => items.map((item) => direction === 1
+      ? { ...item, x: Math.max(0, oldHeight - item.y), y: Math.max(0, item.x) }
+      : { ...item, x: Math.max(0, item.y), y: Math.max(0, oldWidth - item.x) }));
     setSelection(null);
   }
 
@@ -309,6 +367,9 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
         next.fillRect(0, 0, canvas.width, canvas.height);
         next.drawImage(source, 0, 0);
       }
+      setTextItems((items) => items
+        .filter((item) => item.x >= box.x && item.x <= box.x + box.width && item.y >= box.y && item.y <= box.y + box.height)
+        .map((item) => ({ ...item, x: item.x - box.x, y: item.y - box.y })));
     } else if (tool === "REDACT") {
       ctx.fillStyle = "#000";
       ctx.fillRect(box.x, box.y, box.width, box.height);
@@ -357,7 +418,7 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
 
   function undo() {
     const previous = history[history.length - 1];
-    const current = currentSnapshot();
+    const current = currentState();
     if (!previous || !current) return;
     setHistory((items) => items.slice(0, -1));
     setFuture((items) => [...items.slice(-(HISTORY_LIMIT - 1)), current]);
@@ -366,7 +427,7 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
 
   function redo() {
     const next = future[future.length - 1];
-    const current = currentSnapshot();
+    const current = currentState();
     if (!next || !current) return;
     setFuture((items) => items.slice(0, -1));
     setHistory((items) => [...items.slice(-(HISTORY_LIMIT - 1)), current]);
@@ -375,9 +436,9 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
 
   function reset() {
     if (!originalRef.current) return;
-    const current = currentSnapshot();
+    const current = currentState();
     if (current) setHistory((items) => [...items.slice(-(HISTORY_LIMIT - 1)), current]);
-    restore(originalRef.current);
+    restore({ canvas: originalRef.current, textItems: [] });
     setFuture([]);
     setBrightness(100);
     setContrast(100);
@@ -385,10 +446,39 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
     setPreviewMode(false);
   }
 
+  function updateSelectedTextSize(size: number) {
+    setTextSize(size);
+    if (!selectedTextId) return;
+    setTextItems((items) => items.map((item) => item.id === selectedTextId ? { ...item, size } : item));
+  }
+
+  function deleteSelectedText() {
+    if (!selectedTextId) return;
+    pushHistory();
+    setTextItems((items) => items.filter((item) => item.id !== selectedTextId));
+    setSelectedTextId(null);
+  }
+
   function enterPreview() {
     if (brightness !== 100 || contrast !== 100 || grayscale) applyAdjustments();
     setSelection(null);
+    setSelectedTextId(null);
     setPreviewMode(true);
+  }
+
+  function renderFinalCanvas() {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const output = cloneCanvas(canvas);
+    const ctx = output.getContext("2d");
+    if (!ctx) return null;
+    ctx.fillStyle = "#111827";
+    ctx.textBaseline = "top";
+    for (const item of textItems) {
+      ctx.font = `${Math.max(12, item.size)}px sans-serif`;
+      ctx.fillText(item.text, item.x, item.y);
+    }
+    return output;
   }
 
   async function save() {
@@ -403,7 +493,9 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
         setContrast(100);
         setGrayscale(false);
       }
-      const output = await canvasFile(canvas);
+      const finalCanvas = renderFinalCanvas();
+      if (!finalCanvas) throw new Error("Canvas export failed");
+      const output = await canvasFile(finalCanvas);
       if (!output) throw new Error("Canvas export failed");
       onSave(output);
     } catch {
@@ -412,6 +504,10 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
       setSaving(false);
     }
   }
+
+  const selectedText = textItems.find((item) => item.id === selectedTextId) ?? null;
+  const canvas = canvasRef.current;
+  const displayScale = canvas?.width ? (canvas.clientWidth || canvas.width) / canvas.width : 1;
 
   const tools: Array<{ id: Tool; label: string; icon: typeof Crop }> = [
     { id: "PAN", label: "Pan", icon: Hand },
@@ -432,7 +528,7 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
         <>
           <div className="mb-3 flex flex-wrap gap-2">
             {tools.map(({ id, label, icon: Icon }) => (
-              <Button key={id} size="sm" variant={tool === id ? "primary" : "secondary"} onClick={() => { setTool(id); setSelection(null); }} icon={<Icon className="h-4 w-4" />}>
+              <Button key={id} size="sm" variant={tool === id ? "primary" : "secondary"} onClick={() => { setTool(id); setSelection(null); setSelectedTextId(null); }} icon={<Icon className="h-4 w-4" />}>
                 {label}
               </Button>
             ))}
@@ -467,11 +563,21 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
           )}
 
           {tool === "TEXT" && (
-            <div className="mb-3 grid gap-3 sm:grid-cols-[1fr_180px]">
+            <div className="mb-3 grid gap-3 rounded-card border border-border bg-white p-3 sm:grid-cols-[1fr_180px_auto] sm:items-end">
               <Input label="Text to place" value={text} onChange={(e) => setText(e.target.value)} placeholder="Enter text, then tap the document" />
-              <label className="text-xs font-medium text-ink/70">Text size
-                <input className="mt-2 w-full" type="range" min="14" max="72" value={textSize} onChange={(e) => setTextSize(Number(e.target.value))} />
+              <label className="text-xs font-medium text-ink/70">{selectedText ? "Selected text size" : "New text size"}
+                <input
+                  className="mt-2 w-full"
+                  type="range"
+                  min="14"
+                  max="72"
+                  value={selectedText?.size ?? textSize}
+                  onPointerDown={() => { if (selectedTextId) pushHistory(); }}
+                  onChange={(e) => updateSelectedTextSize(Number(e.target.value))}
+                />
               </label>
+              <Button size="sm" variant="danger" disabled={!selectedTextId} onClick={deleteSelectedText} icon={<Trash2 className="h-4 w-4" />}>Delete text</Button>
+              <p className="text-xs text-ink/50 sm:col-span-3">Tap the document to add text. Tap and drag a placed text item to move it; select it to resize or delete it.</p>
             </div>
           )}
         </>
@@ -489,6 +595,29 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
             onPointerCancel={pointerUp}
             aria-label="Document editing canvas"
           />
+
+          {textItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              aria-label={`Text: ${item.text}. Drag to move.`}
+              className={cnTextItem(previewMode, selectedTextId === item.id)}
+              style={{
+                left: `${(item.x / (canvasRef.current?.width || 1)) * 100}%`,
+                top: `${(item.y / (canvasRef.current?.height || 1)) * 100}%`,
+                fontSize: `${Math.max(10, item.size * displayScale)}px`,
+                pointerEvents: previewMode ? "none" : "auto",
+              }}
+              onPointerDown={(event) => startTextDrag(item, event)}
+              onPointerMove={moveText}
+              onPointerUp={endTextDrag}
+              onPointerCancel={endTextDrag}
+              onClick={(event) => { event.stopPropagation(); setSelectedTextId(item.id); setTool("TEXT"); }}
+            >
+              {item.text}
+            </button>
+          ))}
+
           {!previewMode && selection && (
             <div
               className="absolute border-2 border-sage-600 bg-sage-400/10"
@@ -518,7 +647,7 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-2">
           {!previewMode && <Button size="sm" variant="ghost" onClick={reset}>Reset</Button>}
-          {!previewMode && selection && !["DRAW", "ERASE"].includes(tool) && <Button size="sm" variant="secondary" onClick={applySelection}>Apply {tool.toLowerCase()}</Button>}
+          {!previewMode && selection && !["DRAW", "ERASE", "TEXT"].includes(tool) && <Button size="sm" variant="secondary" onClick={applySelection}>Apply {tool.toLowerCase()}</Button>}
           {!previewMode && <Button size="sm" variant="secondary" onClick={enterPreview} icon={<Eye className="h-4 w-4" />}>Preview</Button>}
           {previewMode && <Button size="sm" variant="secondary" onClick={() => setPreviewMode(false)}>Back to edit</Button>}
         </div>
@@ -529,4 +658,9 @@ export function DocumentCanvasEditor({ open, file, onClose, onSave }: DocumentCa
       </div>
     </Modal>
   );
+}
+
+function cnTextItem(preview: boolean, selected: boolean) {
+  if (preview) return "absolute z-20 cursor-default whitespace-nowrap bg-transparent p-0 text-left leading-none text-ink";
+  return `absolute z-20 touch-none whitespace-nowrap rounded border px-1 py-0.5 text-left leading-none text-ink ${selected ? "border-sage-600 bg-white/90 shadow-subtle" : "border-transparent bg-white/40 hover:border-sage-300"}`;
 }
