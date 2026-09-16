@@ -62,6 +62,27 @@ const terms: Record<string, Pair> = {
   "Confirmed": { ZH: "已确认", TA: "உறுதிசெய்யப்பட்டது" },
   "Overdue": { ZH: "已逾期", TA: "காலதாமதம்" },
 
+  // Owner dashboard rent labels. Include both rendered capitalization forms.
+  "expected rent": { ZH: "应收租金", TA: "எதிர்பார்க்கப்படும் வாடகை" },
+  "confirmed rent": { ZH: "已确认租金", TA: "உறுதிசெய்யப்பட்ட வாடகை" },
+  "outstanding rent": { ZH: "未收租金", TA: "நிலுவை வாடகை" },
+  "Expected rent": { ZH: "应收租金", TA: "எதிர்பார்க்கப்படும் வாடகை" },
+  "Confirmed rent": { ZH: "已确认租金", TA: "உறுதிசெய்யப்பட்ட வாடகை" },
+  "Outstanding rent": { ZH: "未收租金", TA: "நிலுவை வாடகை" },
+
+  // Owner People tabs, account labels and actions.
+  "tenants": { ZH: "租客", TA: "குடியிருப்பாளர்கள்" },
+  "agents": { ZH: "代理", TA: "முகவர்கள்" },
+  "Tenants": { ZH: "租客", TA: "குடியிருப்பாளர்கள்" },
+  "Agents": { ZH: "代理", TA: "முகவர்கள்" },
+  "Active": { ZH: "有效", TA: "செயலில்" },
+  "Waiting for activation": { ZH: "等待激活", TA: "செயல்படுத்த காத்திருக்கிறது" },
+  "Deactivated": { ZH: "已停用", TA: "செயலிழக்கப்பட்டது" },
+  "Deactivate agent": { ZH: "停用代理", TA: "முகவரை செயலிழக்கச் செய்" },
+  "Reactivate agent": { ZH: "重新启用代理", TA: "முகவரை மீண்டும் செயல்படுத்து" },
+  "Activate agent": { ZH: "启用代理", TA: "முகவரை செயல்படுத்து" },
+  "Select a property first": { ZH: "请先选择房产", TA: "முதலில் ஒரு சொத்தைத் தேர்ந்தெடுக்கவும்" },
+
   // Documentation page copy specifically missed by runtime rendering.
   "Private tenancy documents, requirements, completion and version history.": { ZH: "管理租约的私人文件、要求、完成情况和版本记录。", TA: "தனியார் வாடகை ஆவணங்கள், தேவைகள், நிறைவு மற்றும் பதிப்பு வரலாறு." },
   "Create a document or tenant requirement for a tenancy.": { ZH: "为租约创建文件或租客提交要求。", TA: "ஒரு வாடகைக்கான ஆவணம் அல்லது குடியிருப்பாளர் தேவையை உருவாக்கவும்." },
@@ -119,3 +140,50 @@ export const dynamicLiteralTranslations: Record<Language, Record<string, string>
   ZH: makeDictionary("ZH"),
   TA: makeDictionary("TA"),
 };
+
+/**
+ * Translate runtime strings containing counts. These cannot be represented by
+ * a literal dictionary because the number changes at runtime.
+ */
+export function translateRuntimePattern(value: string, language: Language): string | null {
+  if (language === "EN") return null;
+
+  const countLabel = (pattern: RegExp, zhNoun: string, taSingular: string, taPlural: string) => {
+    const match = value.match(pattern);
+    if (!match) return null;
+    const count = match[1];
+    if (language === "ZH") return `${count} 个${zhNoun}`;
+    return `${count} ${count === "1" ? taSingular : taPlural}`;
+  };
+
+  const assignments = countLabel(/^(\d+)\s+assignments?$/i, "分配", "ஒதுக்கீடு", "ஒதுக்கீடுகள்");
+  if (assignments) return assignments;
+
+  const units = countLabel(/^(\d+)\s+units?$/i, "单位", "அலகு", "அலகுகள்");
+  if (units) return units;
+
+  const tenants = countLabel(/^(\d+)\s+tenants?$/i, "租客", "குடியிருப்பாளர்", "குடியிருப்பாளர்கள்");
+  if (tenants) return tenants;
+
+  const agents = countLabel(/^(\d+)\s+agents?$/i, "代理", "முகவர்", "முகவர்கள்");
+  if (agents) return agents;
+
+  const properties = countLabel(/^(\d+)\s+propert(?:y|ies)$/i, "房产", "சொத்து", "சொத்துகள்");
+  if (properties) return properties;
+
+  const reviews = value.match(/^(\d+)\s+payment reviews? need attention$/i);
+  if (reviews) {
+    return language === "ZH"
+      ? `${reviews[1]} 笔付款审核需要处理`
+      : `${reviews[1]} கட்டண மதிப்பாய்வு${reviews[1] === "1" ? "" : "கள்"} கவனம் தேவை`;
+  }
+
+  const overdueRent = value.match(/^(\d+)\s+rent payments? (?:is|are) overdue\.$/i);
+  if (overdueRent) {
+    return language === "ZH"
+      ? `${overdueRent[1]} 笔租金付款已逾期。`
+      : `${overdueRent[1]} வாடகை கட்டணம்${overdueRent[1] === "1" ? "" : "கள்"} காலதாமதமாகியுள்ளது.`;
+  }
+
+  return null;
+}
