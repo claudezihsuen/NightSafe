@@ -7,20 +7,37 @@ const files = [];
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) walk(full);
-    else if (/\.(tsx?|jsx?)$/.test(entry.name) && !full.endsWith(path.join("i18n", "translations.ts"))) files.push(full);
+    if (entry.isDirectory()) {
+      if (path.relative(root, full).replaceAll("\\", "/") === "i18n") continue;
+      walk(full);
+    } else if (/\.(tsx?|jsx?)$/.test(entry.name)) {
+      files.push(full);
+    }
   }
 }
 walk(root);
 
-const translationSource = fs.readFileSync(path.resolve("src/i18n/translations.ts"), "utf8");
-const translatedLiterals = new Set();
-for (const match of translationSource.matchAll(/^\s*"((?:[^"\\]|\\.)*)"\s*:/gm)) {
-  try { translatedLiterals.add(JSON.parse(`"${match[1]}"`)); } catch { translatedLiterals.add(match[1]); }
+function literalKeys(file) {
+  const source = fs.readFileSync(path.resolve(file), "utf8");
+  const keys = new Set();
+  for (const match of source.matchAll(/^\s*"((?:[^"\\]|\\.)*)"\s*:/gm)) {
+    try { keys.add(JSON.parse(`"${match[1]}"`)); } catch { keys.add(match[1]); }
+  }
+  return keys;
 }
 
+const baseKeys = literalKeys("src/i18n/translations.ts");
+const zhKeys = literalKeys("src/i18n/expanded-zh.ts");
+const taKeys = literalKeys("src/i18n/expanded-ta.ts");
+const translatedLiterals = new Set([...baseKeys, ...zhKeys]);
+
+const mismatchedExpandedKeys = [
+  ...[...zhKeys].filter((key) => !taKeys.has(key)).map((key) => `Missing Tamil translation: ${key}`),
+  ...[...taKeys].filter((key) => !zhKeys.has(key)).map((key) => `Missing Chinese translation: ${key}`),
+];
+
 const attributeNames = new Set([
-  "title", "description", "label", "placeholder", "aria-label", "helperText", "hint",
+  "title", "description", "label", "placeholder", "aria-label", "aria-description", "alt", "helperText", "hint",
   "emptyTitle", "emptyDescription", "confirmText", "cancelText", "message", "caption",
 ]);
 const callNames = new Set([
@@ -93,4 +110,7 @@ const missing = unique.filter((row) => !translatedLiterals.has(row.text));
 console.log(`I18N_AUDIT_LOCATIONS=${rows.length}`);
 console.log(`I18N_AUDIT_UNIQUE=${unique.length}`);
 console.log(`I18N_AUDIT_MISSING_UNIQUE=${missing.length}`);
-for (const row of missing) console.log(`${row.text} || ${row.file}:${row.line} [${row.kind}]`);
+for (const row of missing) console.error(`${row.text} || ${row.file}:${row.line} [${row.kind}]`);
+for (const issue of mismatchedExpandedKeys) console.error(issue);
+
+if (missing.length || mismatchedExpandedKeys.length) process.exit(1);
