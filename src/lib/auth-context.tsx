@@ -10,7 +10,7 @@ export type LoginResult =
 interface AuthContextValue {
   user: AuthUser | null;
   status: "loading" | "authenticated" | "unauthenticated";
-  login: (email: string, password: string) => Promise<LoginResult>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<LoginResult>;
   verifyTwoFactor: (challenge: string, code: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -24,9 +24,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      // The server is the source of truth for who's logged in — the
-      // session lives in an HTTP-only cookie the browser sends
-      // automatically, never in localStorage or a JS-readable token.
+      // The server is the source of truth for who's logged in — the session
+      // lives in an HTTP-only cookie, never in localStorage or a JS-readable token.
       const data = await api.get<{ user: AuthUser | null }>("/api/auth/me");
       setUser(data.user);
       setStatus(data.user ? "authenticated" : "unauthenticated");
@@ -40,8 +39,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
-  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
-    const data = await api.post<LoginResult>("/api/auth/login", { email, password });
+  const login = useCallback(async (email: string, password: string, rememberMe = false): Promise<LoginResult> => {
+    const data = await api.post<LoginResult>("/api/auth/login", { email, password, rememberMe });
     if ("user" in data) {
       setUser(data.user);
       setStatus("authenticated");
