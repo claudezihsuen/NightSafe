@@ -50,17 +50,25 @@ export async function confirmPaymentCore(
     return json({ error: "This payment was already reviewed. Refresh and try again." }, 409);
   }
 
-  await env.DB.prepare(
-    `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
-     VALUES (?, ?, 'RENT_PAYMENT_CONFIRMED', 'rent_payment', ?, ?)`,
-  )
-    .bind(
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+       VALUES (?, ?, 'RENT_PAYMENT_CONFIRMED', 'rent_payment', ?, ?)`,
+    ).bind(
       crypto.randomUUID(),
       actor.id,
       payment.id,
       JSON.stringify({ tenantId: payment.tenant_id, leaseId: payment.lease_id, month: payment.month, reviewerRole }),
-    )
-    .run();
+    ),
+    env.DB.prepare(
+      `INSERT INTO notifications (id, user_id, title, body)
+       VALUES (?, ?, 'Rent payment confirmed', ?)`,
+    ).bind(
+      crypto.randomUUID(),
+      payment.tenant_id,
+      `Your rent payment for ${payment.month} has been confirmed.`,
+    ),
+  ]);
 
   return json({
     payment: {
@@ -106,11 +114,12 @@ export async function rejectPaymentCore(
     return json({ error: "This payment was already reviewed. Refresh and try again." }, 409);
   }
 
-  await env.DB.prepare(
-    `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
-     VALUES (?, ?, 'RENT_PAYMENT_REJECTED', 'rent_payment', ?, ?)`,
-  )
-    .bind(
+  const reasonText = reason ? ` Reason: ${reason.slice(0, 300)}` : "";
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+       VALUES (?, ?, 'RENT_PAYMENT_REJECTED', 'rent_payment', ?, ?)`,
+    ).bind(
       crypto.randomUUID(),
       actor.id,
       payment.id,
@@ -121,8 +130,16 @@ export async function rejectPaymentCore(
         reviewerRole,
         reason,
       }),
-    )
-    .run();
+    ),
+    env.DB.prepare(
+      `INSERT INTO notifications (id, user_id, title, body)
+       VALUES (?, ?, 'Rent payment needs attention', ?)`,
+    ).bind(
+      crypto.randomUUID(),
+      payment.tenant_id,
+      `Your rent payment for ${payment.month} was not accepted. Please upload a new receipt.${reasonText}`,
+    ),
+  ]);
 
   if (payment.receipt_key) {
     await env.FILES.delete(payment.receipt_key).catch(() => undefined);
