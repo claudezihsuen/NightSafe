@@ -38,11 +38,12 @@ Migrations live in `migrations/`, applied in order via `wrangler d1 migrations a
 - `0013_single_primary_admin.sql` — one Primary Admin marker
 - `0014_business_invariants.sql` — assignment uniqueness, archived-target, Unit Leader, and deposit monetary guards
 - `0015_archived_inventory_write_guard.sql` — blocks new units under archived properties
+- `0016_agent_assignment_overlap_guard.sql` — removes/rejects redundant whole-property + unit Agent access overlap
 
 CI applies the full migration chain to a fresh local D1 and deliberately tries
-invalid writes. A PR fails if D1 accepts a duplicate Agent assignment, archived
-inventory write, duplicate active Unit Leader, deposit overpayment,
-over-deduction, or over-refund.
+invalid writes. A PR fails if D1 accepts a duplicate/overlapping Agent
+assignment, archived inventory write, duplicate active Unit Leader, deposit
+overpayment, over-deduction, or over-refund.
 
 ## Primary administrator
 
@@ -87,9 +88,9 @@ The Worker retains its own Origin/CSRF checks as a second layer. Direct Worker
 access remains available for deployment diagnostics and non-browser clients, but
 the production frontend does not need third-party cookies.
 
-Sessions are HTTP-only and `Secure` outside local development. Repeated failed
-logins are throttled by a hashed IP+email key in D1. Passwords are hashed with
-PBKDF2-HMAC-SHA256 using a random salt and Workers Web Crypto.
+Sessions are HTTP-only, `SameSite=Lax`, and `Secure` outside local development.
+Repeated failed logins are throttled by a hashed IP+email key in D1. Passwords
+are hashed with PBKDF2-HMAC-SHA256 using a random salt and Workers Web Crypto.
 
 ## File security
 
@@ -104,7 +105,7 @@ Important rules are enforced in both API behavior and D1 where possible:
 
 - archived properties/units cannot receive new tenants or Agent assignments
 - archived properties cannot receive new units
-- exact duplicate Agent assignments are rejected
+- duplicate or overlapping Agent assignments are rejected
 - one active/pending Unit Leader occupies a unit at a time
 - Unit Leader replacement releases the old leader and assigns the new one in one D1 batch
 - one ACTIVE lease can exist per unit
