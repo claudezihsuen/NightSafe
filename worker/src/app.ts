@@ -4,6 +4,8 @@ import { withCors } from "./cors";
 import { resolveSession } from "./middleware/requireAuth";
 import { handleDocumentationRoute } from "./documentation/routes";
 import { handlePlatformRoute, runScheduledMaintenance } from "./platform/routes";
+import { handleNotificationRoute } from "./platform/notification-routes";
+import { processFileDeletionQueue } from "./storage/file-deletion";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
@@ -15,6 +17,7 @@ function isFeaturePath(path: string): boolean {
     path.includes("/documents/") ||
     path.endsWith("/dashboard") ||
     path.startsWith("/api/tenant/notifications") ||
+    path.startsWith("/api/unit-leader/notifications") ||
     path === "/api/owner/lifecycle" ||
     path.startsWith("/api/owner/tenancies/") ||
     /^\/api\/owner\/tenants\/[^/]+\/(move|permanent-delete)$/.test(path) ||
@@ -36,6 +39,9 @@ export default {
       const documentation = await handleDocumentationRoute(request, env, actor);
       if (documentation) return withCors(documentation, request, env);
 
+      const notifications = await handleNotificationRoute(request, env, actor);
+      if (notifications) return withCors(notifications, request, env);
+
       const platform = await handlePlatformRoute(request, env, actor);
       if (platform) return withCors(platform, request, env);
 
@@ -47,6 +53,9 @@ export default {
   },
 
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runScheduledMaintenance(env));
+    ctx.waitUntil((async () => {
+      await runScheduledMaintenance(env);
+      await processFileDeletionQueue(env);
+    })());
   },
 };

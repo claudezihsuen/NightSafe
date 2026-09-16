@@ -40,6 +40,7 @@ import { UnitLeaderDashboard } from "@/pages/unit-leader/UnitLeaderDashboard";
 import { UnitLeaderWater } from "@/pages/unit-leader/UnitLeaderWater";
 import { UnitLeaderElectricity } from "@/pages/unit-leader/UnitLeaderElectricity";
 import { UnitLeaderHistory } from "@/pages/unit-leader/UnitLeaderHistory";
+import { UnitLeaderNotifications } from "@/pages/unit-leader/UnitLeaderNotifications";
 import { UnitLeaderProvider } from "@/lib/unit-leader-context";
 import { TenantLayout } from "@/layouts/TenantLayout";
 import { TenantHome } from "@/pages/tenant/TenantHome";
@@ -98,6 +99,7 @@ export default function App() {
           <Route index element={<UnitLeaderDashboard />} />
           <Route path="water" element={<UnitLeaderWater />} />
           <Route path="electricity" element={<UnitLeaderElectricity />} />
+          <Route path="notifications" element={<UnitLeaderNotifications />} />
           <Route path="history" element={<UnitLeaderHistory />} />
         </Route>
 
