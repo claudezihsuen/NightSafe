@@ -4,10 +4,12 @@ import { withCors } from "./cors";
 import { resolveSession, requireRole } from "./middleware/requireAuth";
 import { createAdminAccount, initiatePasswordReset, listUsers, setUserStatus } from "./admin/routes";
 import { markMyNotificationsRead } from "./tenant/routes";
+import { downloadOwnerAgreement, listOwnerAgreements } from "./owner/agreements";
 
 const ADMIN_RESET_PASSWORD = /^\/api\/admin\/users\/([^/]+)\/reset-password$/;
 const ADMIN_USER_STATUS = /^\/api\/admin\/users\/([^/]+)\/status$/;
 const TENANT_NOTIFICATIONS_READ_ALL = "/api/tenant/notifications/read-all";
+const OWNER_AGREEMENT_DOWNLOAD = /^\/api\/owner\/agreements\/([^/]+)\/download$/;
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -22,10 +24,12 @@ export default {
     const { pathname } = url;
     const isAdminRoute = pathname.startsWith("/api/admin/");
     const isTenantNotificationMutation = pathname === TENANT_NOTIFICATIONS_READ_ALL;
+    const isOwnerAgreementRoute =
+      pathname === "/api/owner/agreements" || OWNER_AGREEMENT_DOWNLOAD.test(pathname);
 
     // Keep all existing core routing untouched unless this thin entry layer
     // explicitly owns the route.
-    if (!isAdminRoute && !isTenantNotificationMutation) {
+    if (!isAdminRoute && !isTenantNotificationMutation && !isOwnerAgreementRoute) {
       return coreWorker.fetch(request, env);
     }
 
@@ -45,6 +49,17 @@ export default {
           response = json({ error: "Not authorized." }, 403);
         } else if (request.method === "POST") {
           response = await markMyNotificationsRead(env, sessionUser!);
+        } else {
+          response = json({ error: "Not found." }, 404);
+        }
+      } else if (isOwnerAgreementRoute) {
+        if (!requireRole(sessionUser, ["OWNER"])) {
+          response = json({ error: "Not authorized." }, 403);
+        } else if (pathname === "/api/owner/agreements" && request.method === "GET") {
+          response = await listOwnerAgreements(env, sessionUser!);
+        } else if (OWNER_AGREEMENT_DOWNLOAD.test(pathname) && request.method === "GET") {
+          const [, agreementId] = pathname.match(OWNER_AGREEMENT_DOWNLOAD)!;
+          response = await downloadOwnerAgreement(env, sessionUser!, agreementId);
         } else {
           response = json({ error: "Not found." }, 404);
         }
