@@ -31,21 +31,18 @@ No production D1 or R2 binding is referenced by the staging environment block.
 
 ## Frontend preview
 
-The staging Worker allows browser requests from the stable Cloudflare Pages branch alias:
+NightSafe's hosted frontend no longer needs `VITE_API_URL` to choose a remote API. The Cloudflare Pages Function at `/api/*` keeps browser requests same-origin and selects the backend by hostname:
 
-`https://development.nightsafe.pages.dev`
+- `https://nightsafe.pages.dev` -> `nightsafe-api`
+- `https://development.nightsafe.pages.dev` -> `nightsafe-staging`
 
-Use a `development` branch in the Pages project for that preview. In Cloudflare Pages **Preview** environment variables, set:
+Use a `development` Git branch if you want a stable Pages staging preview. Once Cloudflare Pages has produced the `development.nightsafe.pages.dev` branch alias, that preview automatically proxies its `/api/*` calls to the staging Worker; no Preview-scoped API URL is required.
 
-`VITE_API_URL=https://nightsafe-staging.claude-zihsuen.workers.dev`
-
-Production Pages must keep its production API setting unchanged.
-
-If the `development` Pages preview has not been created yet, the staging backend can still be deployed and migrated, but browser login testing should wait until that preview URL exists. Do not point staging CORS at the staging Worker itself; `FRONTEND_URL` must be a frontend origin.
+The staging Worker's `FRONTEND_URL` is therefore the Pages preview origin, not the Worker itself. If the `development` Pages preview does not exist yet, backend staging can still be migrated/deployed, but browser login testing should wait until the preview exists.
 
 ## Local commands (optional)
 
-These are equivalent to the GitHub workflow and are only needed on a machine that has the repo checked out:
+Local Vite development still honors `VITE_API_URL`, because localhost does not use the hosted Pages Function proxy.
 
 ```bash
 cd worker
@@ -62,6 +59,7 @@ npm run deploy:staging
 | Worker | `nightsafe-staging` | `nightsafe-api` |
 | D1 | `nightsafe-staging-db` | `nightsafe-db` |
 | R2 | `nightsafe-staging-files` | `nightsafe-files` |
+| Frontend API route | Pages `/api/*` proxy -> staging | Pages `/api/*` proxy -> production |
 | Environment value | `staging` | `production` |
 | Deploy workflow | manual `Deploy Staging Worker` | automatic `Deploy Production Worker` on `main` Worker changes |
 
