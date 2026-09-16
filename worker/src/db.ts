@@ -12,8 +12,16 @@ export async function getUserById(env: Env, id: string): Promise<UserRow | null>
   return row ?? null;
 }
 
-export function toSessionUser(user: UserRow): SessionUser {
-  return { id: user.id, email: user.email, name: user.name, role: user.role, unitId: user.unit_id };
+export async function isPrimaryAdmin(env: Env, userId: string): Promise<boolean> {
+  const row = await env.DB.prepare("SELECT 1 AS present FROM primary_admins WHERE user_id = ?")
+    .bind(userId)
+    .first<{ present: number }>();
+  return Boolean(row);
+}
+
+export async function toSessionUser(env: Env, user: UserRow): Promise<SessionUser> {
+  const role = user.role === "ADMIN" && (await isPrimaryAdmin(env, user.id)) ? "SUPER_ADMIN" : user.role;
+  return { id: user.id, email: user.email, name: user.name, role, unitId: user.unit_id };
 }
 
 export async function createSession(env: Env, userId: string, tokenHash: string, expiresAt: string) {
@@ -44,7 +52,7 @@ export async function getSessionUser(env: Env, tokenHash: string): Promise<Sessi
   const user = await getUserById(env, session.user_id);
   if (!user || user.status !== "ACTIVE") return null;
 
-  return toSessionUser(user);
+  return toSessionUser(env, user);
 }
 
 export async function getPropertyById(env: Env, id: string): Promise<PropertyRow | null> {
