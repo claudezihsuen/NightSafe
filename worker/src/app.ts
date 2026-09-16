@@ -6,6 +6,7 @@ import { handleDocumentationRoute } from "./documentation/routes";
 import { handlePlatformRoute, runScheduledMaintenance } from "./platform/routes";
 import { handleNotificationRoute } from "./platform/notification-routes";
 import { handleAccountRoute } from "./account/routes";
+import { disableTwoFactorSafe, enableTwoFactorSafe } from "./account/two-factor";
 import { verifyTwoFactorLogin } from "./auth/routes";
 import {
   completePasswordReset,
@@ -70,6 +71,12 @@ export default {
       if (!actor) return withCors(json({ error: "Not authorized." }, 401), request, env);
 
       if (path.startsWith("/api/account/")) {
+        if (path === "/api/account/two-factor/enable" && request.method === "POST") {
+          return withCors(await enableTwoFactorSafe(request, env, actor), request, env);
+        }
+        if (path === "/api/account/two-factor" && request.method === "DELETE") {
+          return withCors(await disableTwoFactorSafe(request, env, actor), request, env);
+        }
         const account = await handleAccountRoute(request, env, actor);
         return withCors(account ?? json({ error: "Not found." }, 404), request, env);
       }
