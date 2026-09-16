@@ -68,16 +68,17 @@ export async function createSession(
   tokenHash: string,
   expiresAt: string,
   request?: Request,
+  rememberMe = false,
 ) {
   const userAgent = request?.headers.get("User-Agent")?.slice(0, 500) ?? "";
   const deviceName = deviceNameFromUserAgent(userAgent);
   const country = request?.headers.get("CF-IPCountry")?.slice(0, 8) ?? null;
   await env.DB.prepare(
     `INSERT INTO sessions
-       (token_hash, user_id, expires_at, device_id, user_agent, device_name, country, last_seen_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+       (token_hash, user_id, expires_at, device_id, user_agent, device_name, country, last_seen_at, remember_me)
+     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`,
   )
-    .bind(tokenHash, userId, expiresAt, crypto.randomUUID(), userAgent || null, deviceName, country)
+    .bind(tokenHash, userId, expiresAt, crypto.randomUUID(), userAgent || null, deviceName, country, rememberMe ? 1 : 0)
     .run();
 }
 
