@@ -1,5 +1,6 @@
 import type { Env, SessionUser } from "../types";
 import { getDepositBreakdown, streamDepositReceipt } from "../shared/deposits";
+import { putValidatedFile, streamPrivateAttachment } from "../shared/file-security";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -58,7 +59,7 @@ export async function getPayment(env: Env, actor: SessionUser, paymentId: string
  * POST /api/tenant/payments/:id/submit (multipart/form-data)
  * Fields: receipt (file, required).
  * Only allowed while WAITING_PAYMENT — covers both a fresh month and one
- * reverted to WAITING_PAYMENT after a (not-yet-built) rejection.
+ * reverted to WAITING_PAYMENT after a rejection.
  */
 export async function submitPayment(
   request: Request,
@@ -81,21 +82,42 @@ export async function submitPayment(
     return json({ error: "A receipt file is required." }, 400);
   }
 
-  const receiptKey = `receipts/${actor.id}/${payment.id}/${Date.now()}-${receipt.name}`;
-  await env.FILES.put(receiptKey, await receipt.arrayBuffer(), {
-    httpMetadata: { contentType: receipt.type || "application/octet-stream" },
-  });
+  const stored = await putValidatedFile(env, `receipts/${actor.id}/${payment.id}`, receipt);
+  if (!stored.ok) return json({ error: stored.error }, stored.status);
 
   const submittedAt = new Date().toISOString();
+  const update = await env.DB.prepare(
+    `UPDATE rent_payments
+     SET status = 'PENDING_REVIEW', receipt_key = ?, submitted_at = ?
+     WHERE id = ? AND status = 'WAITING_PAYMENT'`,
+  )
+    .bind(stored.fileKey, submittedAt, payment.id)
+    .run();
+
+  if ((update.meta.changes ?? 0) !== 1) {
+    await env.FILES.delete(stored.fileKey).catch(() => undefined);
+    return json({ error: "This payment was already submitted or updated. Refresh and try again." }, 409);
+  }
 
   await env.DB.prepare(
-    `UPDATE rent_payments SET status = 'PENDING_REVIEW', receipt_key = ?, submitted_at = ? WHERE id = ?`,
+    `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+     VALUES (?, ?, 'RENT_PAYMENT_SUBMITTED', 'rent_payment', ?, ?)`,
   )
-    .bind(receiptKey, submittedAt, payment.id)
+    .bind(
+      crypto.randomUUID(),
+      actor.id,
+      payment.id,
+      JSON.stringify({ leaseId: payment.lease_id, month: payment.month, fileName: receipt.name }),
+    )
     .run();
 
   return json({
-    payment: { ...payment, status: "PENDING_REVIEW", receipt_key: receiptKey, submitted_at: submittedAt },
+    payment: {
+      ...payment,
+      status: "PENDING_REVIEW",
+      receipt_key: stored.fileKey,
+      submitted_at: submittedAt,
+    },
   });
 }
 
@@ -106,15 +128,7 @@ export async function getReceipt(env: Env, actor: SessionUser, paymentId: string
     return new Response("Not found.", { status: 404 });
   }
 
-  const object = await env.FILES.get(payment.receipt_key);
-  if (!object) return new Response("Not found.", { status: 404 });
-
-  return new Response(object.body, {
-    headers: {
-      "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
-      "Cache-Control": "private, max-age=0",
-    },
-  });
+  return streamPrivateAttachment(env, payment.receipt_key, `rent-receipt-${payment.month}`);
 }
 
 async function getMyLeaseId(env: Env, actor: SessionUser): Promise<string | null> {
@@ -222,15 +236,5 @@ export async function downloadMyAgreement(env: Env, actor: SessionUser, agreemen
     .first<{ file_key: string; file_name: string }>();
 
   if (!row) return new Response("Not found.", { status: 404 });
-
-  const object = await env.FILES.get(row.file_key);
-  if (!object) return new Response("Not found.", { status: 404 });
-
-  return new Response(object.body, {
-    headers: {
-      "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
-      "Content-Disposition": `attachment; filename="${row.file_name.replace(/"/g, "")}"`,
-      "Cache-Control": "private, max-age=0",
-    },
-  });
+  return streamPrivateAttachment(env, row.file_key, row.file_name);
 }
