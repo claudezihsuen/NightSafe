@@ -124,8 +124,14 @@ export function DocumentDetailPage() {
     try {
       await api.postForm(`/api/tenant/documents/${documentId}/signature`, form);
       setValues((current) => ({ ...current, [signingField.id]: { ...current[signingField.id], signed: true } }));
+      setDetail((current) => current ? {
+        ...current,
+        document: {
+          ...current.document,
+          status: current.document.status === "REVISION_REQUIRED" ? "REVISION_REQUIRED" : "IN_PROGRESS",
+        },
+      } : current);
       setSigningField(null);
-      await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't save the signature.");
     } finally {
@@ -363,7 +369,7 @@ function FieldBuilder({ open, onClose, doc, initial, prefix, onSaved }: { open: 
       setPreviewPage(1);
     }
   }, [open, initial]);
-  const maxPreviewPage = Math.max(1, ...fields.map((field) => field.pageNumber));
+  const maxPreviewPage = Math.max(1, previewPage, ...fields.map((field) => field.pageNumber));
   function add() {
     const index = fields.length;
     setFields((current) => [...current, { id: crypto.randomUUID(), fieldType: "TEXT", label: `Field ${index + 1}`, required: true, pageNumber: previewPage, x: 0.08, y: Math.min(.82, .08 + (index % 6) * .13), width: .36, height: .08 }]);
