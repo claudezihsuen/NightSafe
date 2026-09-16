@@ -5,7 +5,7 @@ import type { NavItem } from "@/types";
 const items: NavItem[] = [
   { label: "Home", path: "/tenant", icon: LayoutDashboard },
   { label: "Payments", path: "/tenant/payments", icon: Wallet },
-  { label: "Agreement", path: "/tenant/agreement", icon: FileText },
+  { label: "Documentation", path: "/tenant/documentation", icon: FileText },
   { label: "Notifications", path: "/tenant/notifications", icon: Bell },
 ];
 
