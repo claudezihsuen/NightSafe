@@ -1,10 +1,13 @@
 name = "nightsafe-api"
-main = "src/entry.ts"
+main = "src/app.ts"
 compatibility_date = "2024-09-23"
 
 [vars]
 ENVIRONMENT = "production"
 FRONTEND_URL = "https://nightsafe.pages.dev"
+
+[triggers]
+crons = ["17 3 * * *"]
 
 [[d1_databases]]
 binding = "DB"
@@ -21,7 +24,7 @@ bucket_name = "nightsafe-files"
 
 # =============================================================================
 # STAGING — isolated D1/R2/Worker. Browser requests are only accepted from
-# the dedicated `development` Pages preview alias. See worker/STAGING.md.
+# Pages previews and the dedicated `development` Pages preview alias.
 # =============================================================================
 [env.staging]
 name = "nightsafe-staging"
