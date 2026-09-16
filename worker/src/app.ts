@@ -7,6 +7,11 @@ import { handlePlatformRoute, runScheduledMaintenance } from "./platform/routes"
 import { handleNotificationRoute } from "./platform/notification-routes";
 import { handleAccountRoute } from "./account/routes";
 import { verifyTwoFactorLogin } from "./auth/routes";
+import {
+  completePasswordReset,
+  requestPasswordReset,
+  verifyPasswordReset,
+} from "./auth/password-reset";
 import { processFileDeletionQueue } from "./storage/file-deletion";
 
 function json(data: unknown, status = 200): Response {
@@ -16,6 +21,7 @@ function json(data: unknown, status = 200): Response {
 function isFeaturePath(path: string): boolean {
   return (
     path === "/api/auth/2fa" ||
+    path.startsWith("/api/auth/password-reset/") ||
     path.startsWith("/api/account/") ||
     path.includes("/documentation") ||
     path.includes("/documents/") ||
@@ -42,6 +48,22 @@ export default {
           return withCors(json({ error: "Not found." }, 404), request, env);
         }
         return withCors(await verifyTwoFactorLogin(request, env), request, env);
+      }
+
+      if (path.startsWith("/api/auth/password-reset/")) {
+        if (request.method !== "POST") {
+          return withCors(json({ error: "Not found." }, 404), request, env);
+        }
+        if (path === "/api/auth/password-reset/request") {
+          return withCors(await requestPasswordReset(request, env), request, env);
+        }
+        if (path === "/api/auth/password-reset/verify") {
+          return withCors(await verifyPasswordReset(request, env), request, env);
+        }
+        if (path === "/api/auth/password-reset/complete") {
+          return withCors(await completePasswordReset(request, env), request, env);
+        }
+        return withCors(json({ error: "Not found." }, 404), request, env);
       }
 
       const actor = await resolveSession(request, env);
