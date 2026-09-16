@@ -1,13 +1,13 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { KeyRound, Mail, MessageSquareText, ShieldCheck } from "lucide-react";
+import { KeyRound, Mail, ShieldCheck } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 
-export type RecoveryMethod = "EMAIL" | "PHONE" | "AUTHENTICATOR";
+export type RecoveryMethod = "EMAIL" | "AUTHENTICATOR";
 
 type Step = "request" | "verify" | "password";
 
@@ -26,12 +26,6 @@ const METHODS: Array<{
     title: "Email",
     description: "Send a 6-digit code to the verified email on your account.",
     icon: Mail,
-  },
-  {
-    value: "PHONE",
-    title: "Phone number",
-    description: "Send a 6-digit SMS code to the verified phone on your account.",
-    icon: MessageSquareText,
   },
   {
     value: "AUTHENTICATOR",
@@ -158,7 +152,7 @@ export function ForgotPasswordPage() {
                 </label>
               ))}
             </fieldset>
-            <p className="text-xs leading-relaxed text-ink/45">For privacy, NightSafe does not confirm whether a recovery method is attached to an email address until a valid verification code is entered.</p>
+            <p className="text-xs leading-relaxed text-ink/45">Phone recovery is hidden until NightSafe has a verified phone number and SMS delivery is configured. For privacy, NightSafe does not confirm whether a recovery method is attached to an account until a valid verification code is entered.</p>
             {error && <p className="text-sm text-status-overdue">{error}</p>}
             <Button type="submit" className="w-full" loading={loading}>Continue</Button>
             <Link to="/login" className="block text-center text-sm font-medium text-sage-700">Back to sign in</Link>
@@ -172,7 +166,7 @@ export function ForgotPasswordPage() {
               <p className="mt-1 text-xs leading-relaxed text-ink/60">
                 {method === "AUTHENTICATOR"
                   ? "Open Google Authenticator (or your chosen authenticator app) and enter the current 6-digit NightSafe code."
-                  : `If this ${method === "EMAIL" ? "email" : "phone"} recovery method is available on your account, enter the 6-digit code you receive.`}
+                  : "If email recovery is available on your account, enter the 6-digit code you receive."}
               </p>
             </div>
             <Input
