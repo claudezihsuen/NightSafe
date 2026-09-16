@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 
-export type Role = "ADMIN" | "OWNER" | "AGENT" | "UNIT_LEADER" | "TENANT";
+export type Role = "SUPER_ADMIN" | "ADMIN" | "OWNER" | "AGENT" | "UNIT_LEADER" | "TENANT";
 
 export type PaymentStatus =
   | "WAITING_PAYMENT"
