@@ -1,4 +1,4 @@
-const CACHE = "nightsafe-shell-v1";
+const CACHE = "nightsafe-shell-v2";
 const SHELL = ["/", "/offline.html", "/manifest.webmanifest", "/favicon.svg"];
 
 self.addEventListener("install", (event) => {

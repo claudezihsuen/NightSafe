@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NightSafe">
+  <path fill="#1B2B22" d="M256 48 416 112v116c0 103-63 189-160 236-97-47-160-133-160-236V112L256 48Z"/>
+  <path fill="none" stroke="#B8D0B8" stroke-linecap="round" stroke-linejoin="round" stroke-width="34" d="m176 252 52 52 108-124"/>
+</svg>

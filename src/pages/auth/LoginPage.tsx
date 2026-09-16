@@ -73,12 +73,12 @@ export function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas px-4 py-8">
       <Card className="w-full max-w-sm border-white/70 bg-card/95 shadow-raised">
-        <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-card bg-midnight-700 shadow-subtle">
-            <ShieldCheck className="h-6 w-6 text-sage-200" />
+        <div className="mb-6 flex items-center justify-center gap-3">
+          <ShieldCheck className="h-9 w-9 shrink-0 text-midnight-700" strokeWidth={1.8} />
+          <div className="text-left">
+            <h1 className="text-lg font-semibold leading-tight text-ink">NightSafe</h1>
+            <p className="text-xs leading-tight text-ink/50">Properties rest easier</p>
           </div>
-          <h1 className="text-lg font-semibold text-ink">NightSafe</h1>
-          <p className="text-sm text-ink/60">Your space. Managed with care.</p>
         </div>
 
         {!challenge ? (
