@@ -5,6 +5,7 @@ export const expandedExtraZh: Record<string, string> = {
   "Payment reviews are clear": "暂无待审核付款",
   "No overdue rent payments in your portfolio.": "你的房产组合中没有逾期租金付款。",
   "Review payments": "审核付款",
+  "Properties rest easier": "Properties rest easier",
 };
 
 export const expandedExtraTa: Record<string, string> = {
@@ -14,4 +15,5 @@ export const expandedExtraTa: Record<string, string> = {
   "Payment reviews are clear": "நிலுவையில் உள்ள கட்டண மதிப்பாய்வுகள் இல்லை",
   "No overdue rent payments in your portfolio.": "உங்கள் சொத்து தொகுப்பில் காலதாமதமான வாடகைக் கட்டணங்கள் எதுவும் இல்லை.",
   "Review payments": "கட்டணங்களை மதிப்பாய்வு செய்",
+  "Properties rest easier": "Properties rest easier",
 };
