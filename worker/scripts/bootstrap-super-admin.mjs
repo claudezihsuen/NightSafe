@@ -4,7 +4,7 @@
 //
 // Example:
 //   node scripts/bootstrap-super-admin.mjs \
-//     "Aaron" "aaron@admin.nightsafe.com" "https://nightsafe.pages.dev" \
+//     "Primary Admin" "admin@example.com" "https://nightsafe.pages.dev" \
 //     > super-admin.sql
 //
 // The SQL is written to stdout. The activation URL is written to stderr so
