@@ -109,6 +109,55 @@ async function changePassword(request: Request, env: Env, actor: SessionUser): P
   return json({ ok: true });
 }
 
+/**
+ * Temporary contact-details flow used until NightSafe has transactional email
+ * and SMS delivery connected. The current password is still required, but no
+ * verification code is sent. A manual change deliberately clears the verified
+ * timestamp so the UI never presents unverified contact details as verified.
+ */
+async function updateEmailManually(request: Request, env: Env, actor: SessionUser): Promise<Response> {
+  const user = await currentUser(env, actor);
+  if (!user) return json({ error: "Account not found." }, 404);
+  const body = await bodyOf(request);
+  const passwordError = await requirePassword(user, body.currentPassword);
+  if (passwordError) return passwordError;
+
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  if (!validEmail(email)) return json({ error: "Enter a valid email address." }, 400);
+  if (email === user.email.toLowerCase()) return json({ error: "This is already your current email." }, 400);
+
+  const existing = await env.DB.prepare("SELECT id FROM users WHERE email = ? AND id != ? LIMIT 1")
+    .bind(email, actor.id).first<{ id: string }>();
+  if (existing) return json({ error: "That email is already used by another account." }, 409);
+
+  await env.DB.batch([
+    env.DB.prepare("UPDATE users SET email = ?, email_verified_at = NULL WHERE id = ?").bind(email, actor.id),
+    env.DB.prepare("DELETE FROM account_verifications WHERE user_id = ? AND purpose = 'EMAIL_CHANGE'").bind(actor.id),
+  ]);
+  await revokeOtherSessions(request, env, actor.id);
+  const updated = await getUserById(env, actor.id);
+  return json({ user: updated ? await toSessionUser(env, updated) : null, verificationRequiredLater: true });
+}
+
+async function updatePhoneManually(request: Request, env: Env, actor: SessionUser): Promise<Response> {
+  const user = await currentUser(env, actor);
+  if (!user) return json({ error: "Account not found." }, 404);
+  const body = await bodyOf(request);
+  const passwordError = await requirePassword(user, body.currentPassword);
+  if (passwordError) return passwordError;
+
+  const phone = normalizePhone(typeof body.phone === "string" ? body.phone : "");
+  if (!phone) return json({ error: "Enter a valid phone number, including country code." }, 400);
+  if (phone === user.phone) return json({ error: "This is already your current phone number." }, 400);
+
+  await env.DB.batch([
+    env.DB.prepare("UPDATE users SET phone = ?, phone_verified_at = NULL WHERE id = ?").bind(phone, actor.id),
+    env.DB.prepare("DELETE FROM account_verifications WHERE user_id = ? AND purpose = 'PHONE_CHANGE'").bind(actor.id),
+  ]);
+  const updated = await getUserById(env, actor.id);
+  return json({ user: updated ? await toSessionUser(env, updated) : null, verificationRequiredLater: true });
+}
+
 async function createVerification(
   env: Env,
   userId: string,
@@ -339,6 +388,8 @@ export async function handleAccountRoute(
   if (path === "/api/account/language" && method === "PATCH") return updateLanguage(request, env, actor);
   if (path === "/api/account/nickname" && method === "PATCH") return updateNickname(request, env, actor);
   if (path === "/api/account/password" && method === "POST") return changePassword(request, env, actor);
+  if (path === "/api/account/email" && method === "PATCH") return updateEmailManually(request, env, actor);
+  if (path === "/api/account/phone" && method === "PATCH") return updatePhoneManually(request, env, actor);
   if (path === "/api/account/email/request" && method === "POST") return requestEmailChange(request, env, actor);
   if (path === "/api/account/email/confirm" && method === "POST") return confirmEmailChange(request, env, actor);
   if (path === "/api/account/phone/request" && method === "POST") return requestPhoneChange(request, env, actor);
