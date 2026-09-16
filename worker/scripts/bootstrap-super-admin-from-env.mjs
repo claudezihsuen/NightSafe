@@ -1,6 +1,9 @@
 // One-time CI bootstrap for NightSafe's Primary Admin.
 // Reads all identity/password values from environment variables so credentials
 // never need to be committed to the repository or printed to Actions logs.
+//
+// The database stores the account as ADMIN and marks it in primary_admins.
+// The Worker exposes that marked account to the frontend as SUPER_ADMIN.
 
 import { pbkdf2Sync, randomBytes, randomUUID } from "node:crypto";
 
@@ -34,5 +37,8 @@ const passwordHash = `${ITERATIONS}:${salt.toString("hex")}:${hash.toString("hex
 const id = randomUUID();
 
 process.stdout.write(
-  `INSERT INTO users (id, email, name, role, password_hash, status) VALUES (${sqlString(id)}, ${sqlString(email)}, ${sqlString(name)}, 'SUPER_ADMIN', ${sqlString(passwordHash)}, 'ACTIVE');\n`,
+  `INSERT INTO users (id, email, name, role, password_hash, status) VALUES (${sqlString(id)}, ${sqlString(email)}, ${sqlString(name)}, 'ADMIN', ${sqlString(passwordHash)}, 'ACTIVE');\n`,
+);
+process.stdout.write(
+  `INSERT INTO primary_admins (user_id) VALUES (${sqlString(id)});\n`,
 );
