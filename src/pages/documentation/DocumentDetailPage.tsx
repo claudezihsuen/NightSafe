@@ -20,7 +20,7 @@ interface DetailResponse {
   fields: DocumentField[];
   values: DocumentValue[];
   versions?: Array<{ version_number: number; file_name: string | null; source: string; uploaded_at: string }>;
-  submissions?: Array<{ id: string; version_number: number; status: string; completed_at: string | null; reopen_reason: string | null; created_at: string }>;
+  submissions?: Array<{ id: string; version_number: number; status: string; completed_at: string | null; completed_by?: string | null; reopen_reason: string | null; created_at: string }>;
   submission?: { version_number: number; status: string; completed_at: string | null } | null;
 }
 
@@ -49,6 +49,7 @@ export function DocumentDetailPage() {
   const [editingFields, setEditingFields] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
   const [showReopen, setShowReopen] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
   const load = async () => {
     try {
@@ -60,6 +61,7 @@ export function DocumentDetailPage() {
         next[value.field_id] = { value: value.value_text ?? "", checked: value.value_checked === 1, signed: Boolean(value.signature_key) };
       }
       setValues(next);
+      setDirty(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't load this document.");
     } finally {
@@ -73,10 +75,25 @@ export function DocumentDetailPage() {
   const pageFields = useMemo(() => (detail?.fields ?? []).filter((field) => field.page_number === page), [detail?.fields, page]);
   const completionAllowed = Boolean(detail && !manager && detail.document.status !== "COMPLETED" && (detail.document.tenantCanEdit || detail.document.tenantCanSign));
 
+  useEffect(() => {
+    if (!completionAllowed || !dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [completionAllowed, dirty]);
+
   function interactive(field: DocumentField) {
     if (!detail || manager || detail.document.status === "COMPLETED") return false;
     if (detail.document.tenantCanEdit) return true;
     return detail.document.tenantCanSign && (field.field_type === "SIGNATURE" || field.field_type === "INITIALS");
+  }
+
+  function leaveDocumentation() {
+    if (dirty && !window.confirm("You have unsaved document changes. Leave without saving?")) return;
+    navigate(`/${prefix}/documentation`);
   }
 
   async function saveProgress() {
@@ -88,6 +105,7 @@ export function DocumentDetailPage() {
         version: detail.document.currentVersion,
         values: detail.fields.map((field) => ({ fieldId: field.id, value: values[field.id]?.value ?? "", checked: values[field.id]?.checked ?? false })),
       });
+      setDirty(false);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't save your progress.");
@@ -106,8 +124,14 @@ export function DocumentDetailPage() {
     try {
       await api.postForm(`/api/tenant/documents/${documentId}/signature`, form);
       setValues((current) => ({ ...current, [signingField.id]: { ...current[signingField.id], signed: true } }));
+      setDetail((current) => current ? {
+        ...current,
+        document: {
+          ...current.document,
+          status: current.document.status === "REVISION_REQUIRED" ? "REVISION_REQUIRED" : "IN_PROGRESS",
+        },
+      } : current);
       setSigningField(null);
-      await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't save the signature.");
     } finally {
@@ -132,6 +156,7 @@ export function DocumentDetailPage() {
     try {
       await saveProgress();
       await api.post(`/api/tenant/documents/${documentId}/submit`);
+      setDirty(false);
       setShowSubmit(false);
       await load();
     } catch (err) {
@@ -192,10 +217,12 @@ export function DocumentDetailPage() {
   const doc = detail.document;
   const viewerUrl = `${API_URL}/api/${prefix}/documents/${doc.id}/view#page=${page}&toolbar=0`;
   const protectedView = !manager && !doc.tenantDownload;
+  const latestCompleted = detail.submissions?.find((submission) => submission.status === "COMPLETED" && submission.completed_at);
+  const signedFields = detail.fields.filter((field) => ["SIGNATURE", "INITIALS"].includes(field.field_type) && values[field.id]?.signed);
 
   return (
     <>
-      <button onClick={() => navigate(`/${prefix}/documentation`)} className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink/60 hover:text-ink"><ArrowLeft className="h-4 w-4" />Documentation</button>
+      <button onClick={leaveDocumentation} className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink/60 hover:text-ink"><ArrowLeft className="h-4 w-4" />Documentation</button>
       <PageHeader title={doc.name} description={`${doc.category || "Documentation"} · ${doc.status.replaceAll("_", " ")}`} />
       {error && <p className="mb-4 rounded-input bg-status-overdue/10 p-3 text-sm text-status-overdue">{error}</p>}
 
@@ -210,7 +237,19 @@ export function DocumentDetailPage() {
                 {pageFields.length > 0 && (
                   <div className="pointer-events-none absolute inset-0 z-10">
                     {pageFields.map((field) => (
-                      <FieldOverlay key={field.id} field={field} value={values[field.id]} editable={interactive(field)} onChange={(value) => setValues((current) => ({ ...current, [field.id]: { ...current[field.id], ...value } }))} onSign={() => setSigningField(field)} prefix={prefix} documentId={doc.id} />
+                      <FieldOverlay
+                        key={field.id}
+                        field={field}
+                        value={values[field.id]}
+                        editable={interactive(field)}
+                        onChange={(value) => {
+                          setValues((current) => ({ ...current, [field.id]: { ...current[field.id], ...value } }));
+                          setDirty(true);
+                        }}
+                        onSign={() => setSigningField(field)}
+                        prefix={prefix}
+                        documentId={doc.id}
+                      />
                     ))}
                   </div>
                 )}
@@ -239,6 +278,17 @@ export function DocumentDetailPage() {
             </Card>
           )}
 
+          {manager && latestCompleted && (
+            <Card>
+              <div className="flex items-center gap-2 text-status-confirmed"><Check className="h-4 w-4" /><h2 className="font-semibold">COMPLETED</h2></div>
+              <dl className="mt-3 grid gap-2 text-sm">
+                <div><dt className="text-ink/50">Completed by</dt><dd className="font-medium text-ink">Tenant · {doc.tenantId}</dd></div>
+                <div><dt className="text-ink/50">Completed</dt><dd className="font-medium text-ink">{new Date(latestCompleted.completed_at!).toLocaleString()}</dd></div>
+                <div><dt className="text-ink/50">Document version</dt><dd className="font-medium text-ink">Version {latestCompleted.version_number}</dd></div>
+              </dl>
+            </Card>
+          )}
+
           {manager && (
             <ManagerPanel detail={detail} prefix={prefix} saving={saving} onSave={updateMetadata} onEditFields={() => setEditingFields(true)} onReview={setReviewStatus} onReopen={() => setShowReopen(true)} onArchive={() => void archive()} onDelete={() => void remove()} />
           )}
@@ -253,7 +303,28 @@ export function DocumentDetailPage() {
       {manager && <FieldBuilder open={editingFields} onClose={() => setEditingFields(false)} doc={doc} initial={detail.fields} prefix={prefix} onSaved={load} />}
 
       <Modal open={showSubmit} onClose={() => setShowSubmit(false)} title="Review your document before submitting">
-        <div className="space-y-3 text-sm"><p className="font-medium text-ink">{doc.name}</p><p className="text-ink/60">Completed fields: {detail.fields.length - missingRequired().length} / {detail.fields.length}</p>{missingRequired().length > 0 ? <div className="rounded-input bg-status-waiting/10 p-3"><p className="font-medium">Please complete:</p><ul className="mt-1 list-disc pl-5">{missingRequired().map((label) => <li key={label}>{label}</li>)}</ul></div> : <p className="flex items-center gap-2 text-status-confirmed"><Check className="h-4 w-4" />All required fields are complete.</p>}</div>
+        <div className="space-y-3 text-sm">
+          <p className="font-medium text-ink">{doc.name}</p>
+          <p className="text-ink/60">Completed fields: {detail.fields.length - missingRequired().length} / {detail.fields.length}</p>
+          {missingRequired().length > 0 ? (
+            <div className="rounded-input bg-status-waiting/10 p-3"><p className="font-medium">Please complete:</p><ul className="mt-1 list-disc pl-5">{missingRequired().map((label) => <li key={label}>{label}</li>)}</ul></div>
+          ) : (
+            <p className="flex items-center gap-2 text-status-confirmed"><Check className="h-4 w-4" />All required fields are complete.</p>
+          )}
+          {signedFields.length > 0 && (
+            <div>
+              <p className="mb-2 font-medium text-ink">Signature preview</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {signedFields.map((field) => (
+                  <div key={field.id} className="rounded-input border border-border bg-white p-2">
+                    <p className="mb-1 text-xs text-ink/50">{field.label}</p>
+                    <img src={`${API_URL}/api/tenant/documents/${doc.id}/signature/${field.id}`} alt={`${field.label} preview`} className="h-20 w-full object-contain" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         <div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={() => setShowSubmit(false)}>Back</Button><Button onClick={() => void submit()} disabled={missingRequired().length > 0} loading={saving}>Final submit</Button></div>
       </Modal>
 
@@ -291,10 +362,35 @@ interface BuilderField { id: string; fieldType: DocumentField["field_type"]; lab
 function FieldBuilder({ open, onClose, doc, initial, prefix, onSaved }: { open: boolean; onClose: () => void; doc: DocumentationItem; initial: DocumentField[]; prefix: string; onSaved: () => Promise<void> }) {
   const [fields, setFields] = useState<BuilderField[]>([]);
   const [saving, setSaving] = useState(false);
-  useEffect(() => { if (open) setFields(initial.map((field) => ({ id: field.id, fieldType: field.field_type, label: field.label, required: Boolean(field.required), pageNumber: field.page_number, x: field.x, y: field.y, width: field.width, height: field.height }))); }, [open, initial]);
-  function add() { const index = fields.length; setFields((current) => [...current, { id: crypto.randomUUID(), fieldType: "TEXT", label: `Field ${index + 1}`, required: true, pageNumber: 1, x: 0.08, y: Math.min(.82, .08 + (index % 6) * .13), width: .36, height: .08 }]); }
+  const [previewPage, setPreviewPage] = useState(1);
+  useEffect(() => {
+    if (open) {
+      setFields(initial.map((field) => ({ id: field.id, fieldType: field.field_type, label: field.label, required: Boolean(field.required), pageNumber: field.page_number, x: field.x, y: field.y, width: field.width, height: field.height })));
+      setPreviewPage(1);
+    }
+  }, [open, initial]);
+  const maxPreviewPage = Math.max(1, previewPage, ...fields.map((field) => field.pageNumber));
+  function add() {
+    const index = fields.length;
+    setFields((current) => [...current, { id: crypto.randomUUID(), fieldType: "TEXT", label: `Field ${index + 1}`, required: true, pageNumber: previewPage, x: 0.08, y: Math.min(.82, .08 + (index % 6) * .13), width: .36, height: .08 }]);
+  }
   async function save() { setSaving(true); try { await api.put(`/api/${prefix}/documents/${doc.id}/fields`, { fields }); await onSaved(); onClose(); } finally { setSaving(false); } }
-  return <Modal open={open} onClose={onClose} title="Configure Tenant fields" className="max-w-4xl max-h-[92vh] overflow-y-auto"><p className="mb-4 text-sm text-ink/60">Positions use percentages of the document page. Drag each marker in the preview, then adjust size and label below.</p><div className="relative mb-4 aspect-[3/4] max-h-[52vh] overflow-hidden rounded-card border border-border bg-sage-50"><iframe src={`${API_URL}/api/${prefix}/documents/${doc.id}/view#toolbar=0`} title="Field layout preview" className="pointer-events-none h-full w-full bg-white" />{fields.filter((f) => f.pageNumber === 1).map((field, index) => <DraggableMarker key={field.id} field={field} index={index} onChange={(next) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, ...next } : item))} />)}</div><div className="space-y-3">{fields.map((field, index) => <Card key={field.id} className="p-3"><div className="grid gap-2 sm:grid-cols-6"><Select label="Type" value={field.fieldType} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, fieldType: e.target.value as BuilderField["fieldType"] } : item))}>{["TEXT","DATE","SIGNATURE","CHECKBOX","INITIALS"].map((type) => <option key={type}>{type}</option>)}</Select><Input label="Label" className="sm:col-span-2" value={field.label} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, label: e.target.value } : item))} /><Input label="Page" type="number" min="1" value={field.pageNumber} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, pageNumber: Math.max(1, Number(e.target.value)) } : item))} /><Input label="Width %" type="number" min="5" max="100" value={Math.round(field.width * 100)} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, width: Math.max(.05, Math.min(1 - item.x, Number(e.target.value) / 100)) } : item))} /><Input label="Height %" type="number" min="3" max="50" value={Math.round(field.height * 100)} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, height: Math.max(.03, Math.min(1 - item.y, Number(e.target.value) / 100)) } : item))} /></div><div className="mt-2 flex justify-between"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={field.required} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, required: e.target.checked } : item))} />Required</label><Button size="sm" variant="ghost" onClick={() => setFields((items) => items.filter((_, i) => i !== index))}>Remove</Button></div></Card>)}</div><div className="mt-4 flex flex-wrap justify-between gap-2"><Button variant="secondary" onClick={add} icon={<Plus className="h-4 w-4" />}>Add field</Button><div className="flex gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={() => void save()} loading={saving}>Save fields</Button></div></div></Modal>;
+  return (
+    <Modal open={open} onClose={onClose} title="Configure Tenant fields" className="max-w-4xl max-h-[92vh] overflow-y-auto">
+      <p className="mb-4 text-sm text-ink/60">Positions use percentages of each document page. Navigate pages, drag each marker in the preview, then adjust its size and label below.</p>
+      <div className="relative mb-3 aspect-[3/4] max-h-[52vh] overflow-hidden rounded-card border border-border bg-sage-50">
+        <iframe src={`${API_URL}/api/${prefix}/documents/${doc.id}/view#page=${previewPage}&toolbar=0`} title={`Field layout preview page ${previewPage}`} className="pointer-events-none h-full w-full bg-white" />
+        {fields.filter((field) => field.pageNumber === previewPage).map((field, index) => <DraggableMarker key={field.id} field={field} index={index} onChange={(next) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, ...next } : item))} />)}
+      </div>
+      <div className="mb-4 flex items-center justify-center gap-3">
+        <Button size="sm" variant="secondary" disabled={previewPage <= 1} onClick={() => setPreviewPage((value) => Math.max(1, value - 1))}>Previous page</Button>
+        <span className="text-sm text-ink/60">Page {previewPage} of {maxPreviewPage}</span>
+        <Button size="sm" variant="secondary" onClick={() => setPreviewPage((value) => value + 1)}>Next page</Button>
+      </div>
+      <div className="space-y-3">{fields.map((field, index) => <Card key={field.id} className="p-3"><div className="grid gap-2 sm:grid-cols-6"><Select label="Type" value={field.fieldType} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, fieldType: e.target.value as BuilderField["fieldType"] } : item))}>{["TEXT","DATE","SIGNATURE","CHECKBOX","INITIALS"].map((type) => <option key={type}>{type}</option>)}</Select><Input label="Label" className="sm:col-span-2" value={field.label} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, label: e.target.value } : item))} /><Input label="Page" type="number" min="1" value={field.pageNumber} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, pageNumber: Math.max(1, Number(e.target.value)) } : item))} /><Input label="Width %" type="number" min="5" max="100" value={Math.round(field.width * 100)} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, width: Math.max(.05, Math.min(1 - item.x, Number(e.target.value) / 100)) } : item))} /><Input label="Height %" type="number" min="3" max="50" value={Math.round(field.height * 100)} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, height: Math.max(.03, Math.min(1 - item.y, Number(e.target.value) / 100)) } : item))} /></div><div className="mt-2 flex justify-between"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={field.required} onChange={(e) => setFields((items) => items.map((item) => item.id === field.id ? { ...item, required: e.target.checked } : item))} />Required</label><Button size="sm" variant="ghost" onClick={() => setFields((items) => items.filter((_, i) => i !== index))}>Remove</Button></div></Card>)}</div>
+      <div className="mt-4 flex flex-wrap justify-between gap-2"><Button variant="secondary" onClick={add} icon={<Plus className="h-4 w-4" />}>Add field to page {previewPage}</Button><div className="flex gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={() => void save()} loading={saving}>Save fields</Button></div></div>
+    </Modal>
+  );
 }
 
 function DraggableMarker({ field, index, onChange }: { field: BuilderField; index: number; onChange: (value: Partial<BuilderField>) => void }) {
