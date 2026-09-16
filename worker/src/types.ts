@@ -1,10 +1,10 @@
-export type Role = "OWNER" | "AGENT" | "UNIT_LEADER" | "TENANT";
+export type Role = "ADMIN" | "OWNER" | "AGENT" | "UNIT_LEADER" | "TENANT";
 
 export interface Env {
   DB: D1Database;
   FILES: R2Bucket; // agreement/receipt uploads
-  ENVIRONMENT?: string; // "development" | "production"
-  FRONTEND_URL: string; // e.g. http://localhost:5173 or https://app.nightsafe.example
+  ENVIRONMENT?: string; // "development" | "staging" | "production"
+  FRONTEND_URL: string; // e.g. http://localhost:5173 or https://nightsafe.pages.dev
 }
 
 export interface UserRow {
