@@ -1,8 +1,6 @@
 import type { Env, UserRow } from "../types";
 import { getUserByEmail, getUserById } from "../db";
 import { isAllowedBrowserOrigin } from "../cors";
-import { sendVerificationEmail } from "../account/email";
-import { sendRecoverySms } from "../account/sms";
 import { verifyTotp } from "../account/totp";
 import { hashPassword } from "./hash";
 import { generateToken, hashToken } from "./session";
@@ -18,16 +16,6 @@ function json(data: unknown, status = 200, headers: HeadersInit = {}): Response 
 
 function rejectCrossOriginBrowserMutation(request: Request, env: Env): Response | null {
   return isAllowedBrowserOrigin(request, env) ? null : json({ error: "Not authorized." }, 403);
-}
-
-function verificationCode(): string {
-  const bytes = new Uint32Array(1);
-  crypto.getRandomValues(bytes);
-  return String(bytes[0] % 1_000_000).padStart(6, "0");
-}
-
-function methodOf(value: unknown): RecoveryMethod | null {
-  return value === "EMAIL" || value === "PHONE" || value === "AUTHENTICATOR" ? value : null;
 }
 
 async function bodyOf(request: Request): Promise<Record<string, unknown>> {
@@ -63,15 +51,7 @@ async function checkResetRateLimit(request: Request, env: Env, email: string): P
   return null;
 }
 
-function methodIsConfigured(env: Env, method: RecoveryMethod): boolean {
-  if (method === "EMAIL") return Boolean(env.RESEND_API_KEY && env.EMAIL_FROM);
-  if (method === "PHONE") return Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_FROM_NUMBER);
-  return true;
-}
-
-function userCanUse(user: UserRow, method: RecoveryMethod): boolean {
-  if (method === "EMAIL") return Boolean(user.email_verified_at);
-  if (method === "PHONE") return Boolean(user.phone && user.phone_verified_at);
+function userCanUseAuthenticator(user: UserRow): boolean {
   return Boolean(user.two_factor_secret && user.two_factor_enabled_at);
 }
 
@@ -82,14 +62,11 @@ export async function requestPasswordReset(request: Request, env: Env): Promise<
 
   const body = await bodyOf(request);
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  const method = methodOf(body.method);
-  if (!email || !method) return json({ error: "Email and recovery method are required." }, 400);
-
-  if (!methodIsConfigured(env, method)) {
+  const requestedMethod = typeof body.method === "string" ? body.method : "";
+  if (!email) return json({ error: "Account email is required." }, 400);
+  if (requestedMethod !== "AUTHENTICATOR") {
     return json({
-      error: method === "PHONE"
-        ? "SMS password recovery is not configured yet."
-        : "Email password recovery is not configured yet.",
+      error: "Email and SMS password recovery are temporarily unavailable. Use your Authenticator App.",
     }, 503);
   }
 
@@ -100,34 +77,20 @@ export async function requestPasswordReset(request: Request, env: Env): Promise<
 
   const user = await getUserByEmail(env, email);
   const fakeChallengeId = crypto.randomUUID();
-  if (!user || user.status !== "ACTIVE" || !userCanUse(user, method)) {
+  if (!user || user.status !== "ACTIVE" || !userCanUseAuthenticator(user)) {
     // Deliberately return the same shape so this endpoint does not reveal
-    // whether an email address, phone number, or authenticator is registered.
-    return json({ ok: true, challengeId: fakeChallengeId, method });
+    // whether this email address has an authenticator attached.
+    return json({ ok: true, challengeId: fakeChallengeId, method: "AUTHENTICATOR" });
   }
 
   const id = crypto.randomUUID();
-  const code = method === "AUTHENTICATOR" ? null : verificationCode();
-  const codeHash = code ? await hashToken(code) : null;
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   await env.DB.prepare(
     `INSERT INTO password_reset_challenges (id, user_id, method, code_hash, expires_at)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).bind(id, user.id, method, codeHash, expiresAt).run();
+     VALUES (?, ?, 'AUTHENTICATOR', NULL, ?)`,
+  ).bind(id, user.id, expiresAt).run();
 
-  let delivered = true;
-  if (method === "EMAIL" && code) {
-    delivered = await sendVerificationEmail(env, user.email, code, "EMAIL_CHANGE");
-  } else if (method === "PHONE" && code && user.phone) {
-    delivered = await sendRecoverySms(env, user.phone, code);
-  }
-
-  if (!delivered) {
-    await env.DB.prepare("DELETE FROM password_reset_challenges WHERE id = ?").bind(id).run();
-    return json({ error: "The verification code could not be delivered. Try again later." }, 503);
-  }
-
-  return json({ ok: true, challengeId: id, method });
+  return json({ ok: true, challengeId: id, method: "AUTHENTICATOR" });
 }
 
 interface ResetChallengeRow {
@@ -149,7 +112,7 @@ export async function verifyPasswordReset(request: Request, env: Env): Promise<R
   const body = await bodyOf(request);
   const challengeId = typeof body.challengeId === "string" ? body.challengeId : "";
   const code = typeof body.code === "string" ? body.code.trim() : "";
-  if (!challengeId || !/^\d{6}$/.test(code)) return json({ error: "Enter the 6-digit verification code." }, 400);
+  if (!challengeId || !/^\d{6}$/.test(code)) return json({ error: "Enter the 6-digit authenticator code." }, 400);
 
   const challenge = await env.DB.prepare(
     `SELECT id, user_id, method, code_hash, attempts, expires_at, verified_at, used_at
@@ -159,6 +122,12 @@ export async function verifyPasswordReset(request: Request, env: Env): Promise<R
   if (!challenge || challenge.used_at || new Date(challenge.expires_at).getTime() < Date.now()) {
     return json({ error: "This password reset request is invalid or has expired." }, 410);
   }
+  if (challenge.method !== "AUTHENTICATOR") {
+    await env.DB.prepare("DELETE FROM password_reset_challenges WHERE id = ?").bind(challengeId).run();
+    return json({
+      error: "Email and SMS password recovery are temporarily unavailable. Start again with your Authenticator App.",
+    }, 410);
+  }
   if (challenge.attempts >= 8) {
     await env.DB.prepare("DELETE FROM password_reset_challenges WHERE id = ?").bind(challengeId).run();
     return json({ error: "Too many incorrect attempts. Start again." }, 429);
@@ -167,17 +136,16 @@ export async function verifyPasswordReset(request: Request, env: Env): Promise<R
   const user = await getUserById(env, challenge.user_id);
   if (!user || user.status !== "ACTIVE") return json({ error: "This password reset request is invalid." }, 410);
 
-  let valid = false;
-  if (challenge.method === "AUTHENTICATOR") {
-    valid = Boolean(user.two_factor_secret && user.two_factor_enabled_at && await verifyTotp(user.two_factor_secret, code));
-  } else if (challenge.code_hash) {
-    valid = (await hashToken(code)) === challenge.code_hash;
-  }
+  const valid = Boolean(
+    user.two_factor_secret
+      && user.two_factor_enabled_at
+      && await verifyTotp(user.two_factor_secret, code),
+  );
 
   if (!valid) {
     await env.DB.prepare("UPDATE password_reset_challenges SET attempts = attempts + 1 WHERE id = ?")
       .bind(challengeId).run();
-    return json({ error: "Verification code is incorrect." }, 401);
+    return json({ error: "Authenticator code is incorrect." }, 401);
   }
 
   const resetToken = generateToken();

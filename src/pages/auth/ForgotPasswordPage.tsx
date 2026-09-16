@@ -1,13 +1,13 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { KeyRound, Mail, ShieldCheck } from "lucide-react";
+import { KeyRound, ShieldCheck } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 
-export type RecoveryMethod = "EMAIL" | "AUTHENTICATOR";
+export type RecoveryMethod = "AUTHENTICATOR";
 
 type Step = "request" | "verify" | "password";
 
@@ -15,31 +15,10 @@ function errorMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : "Something went wrong. Try again.";
 }
 
-const METHODS: Array<{
-  value: RecoveryMethod;
-  title: string;
-  description: string;
-  icon: typeof Mail;
-}> = [
-  {
-    value: "EMAIL",
-    title: "Email",
-    description: "Send a 6-digit code to the verified email on your account.",
-    icon: Mail,
-  },
-  {
-    value: "AUTHENTICATOR",
-    title: "Authenticator app",
-    description: "Use the current 6-digit code from Google Authenticator or another TOTP app.",
-    icon: ShieldCheck,
-  },
-];
-
 export function ForgotPasswordPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("request");
   const [email, setEmail] = useState("");
-  const [method, setMethod] = useState<RecoveryMethod>("EMAIL");
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [code, setCode] = useState("");
@@ -55,7 +34,7 @@ export function ForgotPasswordPage() {
     try {
       const response = await api.post<{ challengeId: string; method: RecoveryMethod }>(
         "/api/auth/password-reset/request",
-        { email, method },
+        { email, method: "AUTHENTICATOR" },
       );
       setChallengeId(response.challengeId);
       setCode("");
@@ -108,7 +87,6 @@ export function ForgotPasswordPage() {
     }
   }
 
-  const selected = METHODS.find((item) => item.value === method)!;
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas px-4 py-8">
       <Card className="w-full max-w-lg border-white/70 bg-card/95 shadow-raised">
@@ -118,12 +96,19 @@ export function ForgotPasswordPage() {
           </div>
           <div>
             <h1 className="text-lg font-semibold text-ink">Forgot password</h1>
-            <p className="mt-1 text-sm text-ink/60">Verify one of your recovery methods, then choose a new password.</p>
+            <p className="mt-1 text-sm text-ink/60">Reset your password using the Authenticator App already linked to your NightSafe account.</p>
           </div>
         </div>
 
         {step === "request" && (
           <form className="space-y-4" onSubmit={requestReset}>
+            <div className="rounded-card border border-status-waiting/25 bg-status-waiting/10 p-4">
+              <p className="text-sm font-semibold text-ink">Email password reset is not available yet</p>
+              <p className="mt-1 text-xs leading-relaxed text-ink/60">
+                Until NightSafe has a verified email-sending domain, password recovery is available only with Google Authenticator or another compatible authenticator app.
+              </p>
+            </div>
+
             <Input
               label="Account email"
               type="email"
@@ -132,29 +117,19 @@ export function ForgotPasswordPage() {
               onChange={(event) => setEmail(event.target.value)}
               required
             />
-            <fieldset className="space-y-2">
-              <legend className="mb-2 text-sm font-medium text-ink">Recovery method</legend>
-              {METHODS.map(({ value, title, description, icon: Icon }) => (
-                <label
-                  key={value}
-                  className={`flex cursor-pointer gap-3 rounded-card border p-3 transition ${method === value ? "border-sage-400 bg-sage-50" : "border-border bg-white/70 hover:bg-sage-50/40"}`}
-                >
-                  <input
-                    type="radio"
-                    name="method"
-                    value={value}
-                    checked={method === value}
-                    onChange={() => setMethod(value)}
-                    className="mt-1 accent-sage-600"
-                  />
-                  <Icon className="mt-0.5 h-5 w-5 shrink-0 text-sage-700" />
-                  <span><span className="block text-sm font-medium text-ink">{title}</span><span className="mt-0.5 block text-xs leading-relaxed text-ink/55">{description}</span></span>
-                </label>
-              ))}
-            </fieldset>
-            <p className="text-xs leading-relaxed text-ink/45">Phone recovery is hidden until NightSafe has a verified phone number and SMS delivery is configured. For privacy, NightSafe does not confirm whether a recovery method is attached to an account until a valid verification code is entered.</p>
+
+            <div className="flex gap-3 rounded-card border border-sage-300 bg-sage-50 p-4">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-sage-700" />
+              <div>
+                <p className="text-sm font-semibold text-ink">Authenticator App</p>
+                <p className="mt-1 text-xs leading-relaxed text-ink/60">
+                  Use the current 6-digit NightSafe code from Google Authenticator or another TOTP app. This option works only if you enabled Authenticator App in Settings before losing access to your password.
+                </p>
+              </div>
+            </div>
+
             {error && <p className="text-sm text-status-overdue">{error}</p>}
-            <Button type="submit" className="w-full" loading={loading}>Continue</Button>
+            <Button type="submit" className="w-full" loading={loading}>Continue with Authenticator</Button>
             <Link to="/login" className="block text-center text-sm font-medium text-sage-700">Back to sign in</Link>
           </form>
         )}
@@ -162,15 +137,13 @@ export function ForgotPasswordPage() {
         {step === "verify" && (
           <form className="space-y-4" onSubmit={verifyCode}>
             <div className="rounded-card bg-sage-50 p-4">
-              <p className="text-sm font-medium text-ink">{selected.title}</p>
+              <p className="text-sm font-medium text-ink">Authenticator App verification</p>
               <p className="mt-1 text-xs leading-relaxed text-ink/60">
-                {method === "AUTHENTICATOR"
-                  ? "Open Google Authenticator (or your chosen authenticator app) and enter the current 6-digit NightSafe code."
-                  : "If email recovery is available on your account, enter the 6-digit code you receive."}
+                Open Google Authenticator or your chosen authenticator app and enter the current 6-digit NightSafe code.
               </p>
             </div>
             <Input
-              label="6-digit verification code"
+              label="6-digit authenticator code"
               inputMode="numeric"
               pattern="[0-9]{6}"
               maxLength={6}
@@ -181,7 +154,7 @@ export function ForgotPasswordPage() {
             />
             {error && <p className="text-sm text-status-overdue">{error}</p>}
             <Button type="submit" className="w-full" loading={loading}>Verify code</Button>
-            <Button type="button" variant="ghost" className="w-full" onClick={() => { setStep("request"); setError(null); }}>Choose another method</Button>
+            <Button type="button" variant="ghost" className="w-full" onClick={() => { setStep("request"); setError(null); }}>Back</Button>
           </form>
         )}
 
