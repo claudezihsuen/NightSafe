@@ -1,5 +1,6 @@
 import type { Env, Role, SessionUser } from "../types";
 import { getUserByEmail, getUserById, createSession, deleteSession, toSessionUser } from "../db";
+import { isAllowedBrowserOrigin } from "../cors";
 import { hashPassword, verifyPassword } from "./hash";
 import {
   generateToken,
@@ -17,10 +18,18 @@ function json(data: unknown, status = 200, extraHeaders: HeadersInit = {}): Resp
   });
 }
 
+function rejectCrossOriginBrowserMutation(request: Request, env: Env): Response | null {
+  if (isAllowedBrowserOrigin(request, env)) return null;
+  return json({ error: "Not authorized." }, 403);
+}
+
 export const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
 /** POST /api/auth/login */
 export async function login(request: Request, env: Env): Promise<Response> {
+  const originError = rejectCrossOriginBrowserMutation(request, env);
+  if (originError) return originError;
+
   const body = await request.json().catch(() => null);
   const email = typeof body?.email === "string" ? body.email : "";
   const password = typeof body?.password === "string" ? body.password : "";
@@ -54,6 +63,9 @@ export async function login(request: Request, env: Env): Promise<Response> {
 
 /** POST /api/auth/logout */
 export async function logout(request: Request, env: Env): Promise<Response> {
+  const originError = rejectCrossOriginBrowserMutation(request, env);
+  if (originError) return originError;
+
   const token = readSessionToken(request);
   if (token) {
     await deleteSession(env, await hashToken(token));
@@ -91,6 +103,9 @@ export async function getInvite(env: Env, token: string): Promise<Response> {
  * link. This is the only place a tenant's password is ever created.
  */
 export async function activate(request: Request, env: Env, token: string): Promise<Response> {
+  const originError = rejectCrossOriginBrowserMutation(request, env);
+  if (originError) return originError;
+
   const body = await request.json().catch(() => null);
   const password = typeof body?.password === "string" ? body.password : "";
 
