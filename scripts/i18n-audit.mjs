@@ -13,13 +13,19 @@ function walk(dir) {
 }
 walk(root);
 
+const translationSource = fs.readFileSync(path.resolve("src/i18n/translations.ts"), "utf8");
+const translatedLiterals = new Set();
+for (const match of translationSource.matchAll(/^\s*"((?:[^"\\]|\\.)*)"\s*:/gm)) {
+  try { translatedLiterals.add(JSON.parse(`"${match[1]}"`)); } catch { translatedLiterals.add(match[1]); }
+}
+
 const attributeNames = new Set([
   "title", "description", "label", "placeholder", "aria-label", "helperText", "hint",
   "emptyTitle", "emptyDescription", "confirmText", "cancelText", "message", "caption",
 ]);
 const callNames = new Set([
   "alert", "confirm", "prompt", "setError", "setMessage", "setFeedback", "setSuccess",
-  "setStatus", "setNotice", "setWarning", "setBanner", "setToast",
+  "setNotice", "setWarning", "setBanner", "setToast",
 ]);
 
 function looksHuman(text) {
@@ -27,7 +33,7 @@ function looksHuman(text) {
   if (s.length < 2 || !/[A-Za-z]/.test(s)) return false;
   if (/^(https?:|\/api\/|\/|\.\/|\.\.\/|[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+$)/.test(s)) return false;
   if (/^[A-Z0-9_]+$/.test(s) && s.includes("_")) return false;
-  if (/^(GET|POST|PUT|PATCH|DELETE|EN|ZH|TA)$/.test(s)) return false;
+  if (/^(GET|POST|PUT|PATCH|DELETE|EN|ZH|TA|authenticated|unauthenticated|loading)$/.test(s)) return false;
   if (/^[a-z0-9-]+(?:\s+[a-z0-9-:\/\[\].%]+){2,}$/i.test(s) && /(?:flex|grid|text-|bg-|border|rounded|px-|py-|mt-|mb-|gap-|w-|h-|sm:|md:|lg:|xl:|hover:|focus:)/.test(s)) return false;
   return true;
 }
@@ -60,19 +66,17 @@ for (const file of files) {
       if (callNames.has(name)) {
         for (const arg of node.arguments) {
           if (ts.isStringLiteralLike(arg)) add(file, arg, `call:${name}`, arg.text);
-          if (ts.isNoSubstitutionTemplateLiteral(arg)) add(file, arg, `call:${name}`, arg.text);
-          if (ts.isTemplateExpression(arg)) add(file, arg, `call:${name}`, arg.getText(sf));
+          else if (ts.isNoSubstitutionTemplateLiteral(arg)) add(file, arg, `call:${name}`, arg.text);
         }
       }
     }
 
-    // Common UI object properties and React props assembled in variables.
     if (ts.isPropertyAssignment(node)) {
       const key = node.name.getText(sf).replace(/["']/g, "");
       if (["title", "description", "label", "message", "name", "subtitle", "emptyText", "buttonText"].includes(key)) {
         const init = node.initializer;
         if (ts.isStringLiteralLike(init)) add(file, init, `property:${key}`, init.text);
-        if (ts.isNoSubstitutionTemplateLiteral(init)) add(file, init, `property:${key}`, init.text);
+        else if (ts.isNoSubstitutionTemplateLiteral(init)) add(file, init, `property:${key}`, init.text);
       }
     }
 
@@ -81,8 +85,12 @@ for (const file of files) {
   visit(sf);
 }
 
-const deduped = [...new Map(rows.map((row) => [`${row.file}:${row.line}:${row.kind}:${row.text}`, row])).values()]
-  .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+const uniqueByText = new Map();
+for (const row of rows) if (!uniqueByText.has(row.text)) uniqueByText.set(row.text, row);
+const unique = [...uniqueByText.values()].sort((a, b) => a.text.localeCompare(b.text));
+const missing = unique.filter((row) => !translatedLiterals.has(row.text));
 
-console.log(`I18N_AUDIT_CANDIDATES=${deduped.length}`);
-for (const row of deduped) console.log(`${row.file}:${row.line} [${row.kind}] ${row.text}`);
+console.log(`I18N_AUDIT_LOCATIONS=${rows.length}`);
+console.log(`I18N_AUDIT_UNIQUE=${unique.length}`);
+console.log(`I18N_AUDIT_MISSING_UNIQUE=${missing.length}`);
+for (const row of missing) console.log(`${row.text} || ${row.file}:${row.line} [${row.kind}]`);
