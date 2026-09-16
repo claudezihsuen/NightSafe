@@ -188,13 +188,7 @@ export async function getMyDeductionReceipt(env: Env, actor: SessionUser, deduct
   return streamDepositReceipt(env, deduction.receipt_key);
 }
 
-/**
- * GET /api/tenant/notifications — this tenant's own notifications.
- * The `notifications` table exists in the schema but nothing in the app
- * writes to it yet (no code path triggers a notification on any event) —
- * so this legitimately returns an empty list today. That's a real gap to
- * close in a future task, not something to fake here.
- */
+/** GET /api/tenant/notifications — this tenant's own notifications. */
 export async function listMyNotifications(env: Env, actor: SessionUser): Promise<Response> {
   const { results } = await env.DB.prepare(
     "SELECT id, title, body, read_at, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC",
@@ -203,6 +197,18 @@ export async function listMyNotifications(env: Env, actor: SessionUser): Promise
     .all();
 
   return json({ notifications: results ?? [] });
+}
+
+/** POST /api/tenant/notifications/read-all — marks only this tenant's notifications as read. */
+export async function markMyNotificationsRead(env: Env, actor: SessionUser): Promise<Response> {
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    "UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL",
+  )
+    .bind(now, actor.id)
+    .run();
+
+  return json({ ok: true, readAt: now });
 }
 
 /**
