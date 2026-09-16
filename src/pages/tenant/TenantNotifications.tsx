@@ -19,11 +19,33 @@ export function TenantNotifications() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api
-      .get<{ notifications: Notification[] }>("/api/tenant/notifications")
-      .then((data) => setNotifications(data.notifications))
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Couldn't load your notifications."))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const data = await api.get<{ notifications: Notification[] }>("/api/tenant/notifications");
+        if (cancelled) return;
+        setNotifications(data.notifications);
+
+        if (data.notifications.some((notification) => !notification.read_at)) {
+          // Keep the fetched state unchanged for this render so newly-seen
+          // notifications still look unread once; the next visit reflects
+          // the persisted read state.
+          void api.post<{ ok: true }>("/api/tenant/notifications/read-all").catch(() => undefined);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof ApiError ? err.message : "Couldn't load your notifications.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
