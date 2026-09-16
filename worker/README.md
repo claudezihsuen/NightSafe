@@ -29,35 +29,28 @@ Migrations live in `migrations/`, applied in order via `wrangler d1 migrations a
 - `0007_deposits.sql` — deposit items, payments, deductions, and returns
 - `0008_property_unit_archive.sql` — archive support for properties and units
 - `0009_admin_role.sql` — adds the internal `ADMIN` role
-- `0010_super_admin.sql` — adds the single `SUPER_ADMIN` role and enforces that only one can exist
+- `0010_super_admin.sql` — adds the `primary_admins` marker table; marked ADMIN users are exposed as `SUPER_ADMIN`
+- `0011_active_assignment_guards.sql` — enforces at most one ACTIVE lease per unit
+- `0012_login_rate_limits.sql` — stores hashed failed-login throttling state
+- `0013_single_primary_admin.sql` — makes `primary_admins` a true singleton
 
 A property has many units; a unit reaches its tenant(s) through a lease; an
 agent's access is granted through `agent_assignments`. Rent payments key off
 `(lease_id, month)` and utility payments off `(unit_id, type, month)`.
 
-## Bootstrapping the primary administrator
+## Primary administrator
 
 NightSafe has exactly one `SUPER_ADMIN` (shown as **Primary Admin** in the UI).
+The database stores that account as `ADMIN` and marks it in `primary_admins`;
+the Worker promotes the marked account to `SUPER_ADMIN` in session/API data.
 It has all normal Admin capabilities plus the ability to invite additional
-`ADMIN` accounts. The application never exposes an endpoint for creating a
-second `SUPER_ADMIN`, and migration `0010_super_admin.sql` also enforces this at
-the database level.
+`ADMIN` accounts.
 
-Bootstrap the first primary administrator only after all migrations are applied.
-No password is passed to the script or written to SQL; it creates a
-`WAITING_FOR_ACTIVATION` account and prints a one-time activation URL.
-
-```bash
-node scripts/bootstrap-super-admin.mjs \
-  "Primary Admin" "admin@example.com" "https://nightsafe.pages.dev" \
-  > super-admin.sql
-
-wrangler d1 execute nightsafe-db --remote --file=super-admin.sql
-```
-
-The activation URL is printed to the terminal (stderr), so it is not written
-into `super-admin.sql`. Open the URL and choose the primary administrator's
-password through the normal NightSafe activation page.
+For a brand-new database, `scripts/bootstrap-super-admin.mjs` can create the
+initial one-time activation SQL after all migrations are applied. The deployed
+production instance has already completed this bootstrap. Do not bootstrap a
+second Primary Admin; migration `0013_single_primary_admin.sql` also prevents a
+second marker at the database level.
 
 ## Seeding other privileged accounts
 
@@ -104,10 +97,15 @@ reset link but remains disabled until an Admin enables it.
 | PATCH | `/api/admin/users/:id/status` | ADMIN or SUPER_ADMIN |
 | GET | `/api/owner/properties` | OWNER |
 | POST | `/api/owner/tenants` | OWNER |
+| GET | `/api/owner/agreements` | OWNER |
+| GET | `/api/owner/agreements/:id/download` | OWNER |
+| GET | `/api/tenant/notifications` | TENANT |
+| POST | `/api/tenant/notifications/read-all` | TENANT |
 
 Production sessions are HTTP-only and `Secure`. Because the current Pages
 frontend and Workers API are on different sites, production uses
 `SameSite=None`; authenticated browser mutations are additionally restricted to
 the configured `FRONTEND_URL` origin. Development keeps a localhost-friendly
-cookie policy. Passwords are hashed with PBKDF2-HMAC-SHA256 (100k iterations,
-random salt) using Workers Web Crypto.
+cookie policy. Repeated failed logins are throttled by a hashed IP+email key in
+D1. Passwords are hashed with PBKDF2-HMAC-SHA256 (100k iterations, random salt)
+using Workers Web Crypto.

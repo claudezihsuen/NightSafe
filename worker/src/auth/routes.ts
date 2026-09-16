@@ -25,21 +25,96 @@ function rejectCrossOriginBrowserMutation(request: Request, env: Env): Response 
 
 export const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_BLOCK_MS = 15 * 60 * 1000;
+const MAX_FAILED_LOGINS = 8;
+const LOGIN_RATE_ROW_TTL_MS = 2 * 24 * 60 * 60 * 1000;
+
+interface LoginRateRow {
+  attempts: number;
+  window_started_at: string;
+  blocked_until: string | null;
+}
+
+async function getLoginRateKey(request: Request, email: string): Promise<string> {
+  const ip = request.headers.get("CF-Connecting-IP")?.trim() || "unknown";
+  return hashToken(`login:${ip}:${email.trim().toLowerCase()}`);
+}
+
+async function isLoginBlocked(env: Env, keyHash: string): Promise<boolean> {
+  const row = await env.DB.prepare(
+    "SELECT attempts, window_started_at, blocked_until FROM login_rate_limits WHERE key_hash = ?",
+  )
+    .bind(keyHash)
+    .first<LoginRateRow>();
+
+  return Boolean(row?.blocked_until && new Date(row.blocked_until).getTime() > Date.now());
+}
+
+async function recordFailedLogin(env: Env, keyHash: string): Promise<void> {
+  const nowMs = Date.now();
+  const now = new Date(nowMs).toISOString();
+  const windowCutoffMs = nowMs - LOGIN_WINDOW_MS;
+  const existing = await env.DB.prepare(
+    "SELECT attempts, window_started_at, blocked_until FROM login_rate_limits WHERE key_hash = ?",
+  )
+    .bind(keyHash)
+    .first<LoginRateRow>();
+
+  const stillInWindow =
+    existing && new Date(existing.window_started_at).getTime() >= windowCutoffMs;
+  const attempts = stillInWindow ? existing.attempts + 1 : 1;
+  const windowStartedAt = stillInWindow ? existing.window_started_at : now;
+  const blockedUntil = attempts >= MAX_FAILED_LOGINS
+    ? new Date(nowMs + LOGIN_BLOCK_MS).toISOString()
+    : null;
+  const staleBefore = new Date(nowMs - LOGIN_RATE_ROW_TTL_MS).toISOString();
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO login_rate_limits (key_hash, attempts, window_started_at, blocked_until, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(key_hash) DO UPDATE SET
+         attempts = excluded.attempts,
+         window_started_at = excluded.window_started_at,
+         blocked_until = excluded.blocked_until,
+         updated_at = excluded.updated_at`,
+    ).bind(keyHash, attempts, windowStartedAt, blockedUntil, now),
+    env.DB.prepare("DELETE FROM login_rate_limits WHERE updated_at < ?").bind(staleBefore),
+  ]);
+}
+
+async function clearFailedLogins(env: Env, keyHash: string): Promise<void> {
+  await env.DB.prepare("DELETE FROM login_rate_limits WHERE key_hash = ?").bind(keyHash).run();
+}
+
 /** POST /api/auth/login */
 export async function login(request: Request, env: Env): Promise<Response> {
   const originError = rejectCrossOriginBrowserMutation(request, env);
   if (originError) return originError;
 
   const body = await request.json().catch(() => null);
-  const email = typeof body?.email === "string" ? body.email : "";
+  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   const password = typeof body?.password === "string" ? body.password : "";
 
   if (!email || !password) {
     return json({ error: "Email and password are required." }, 400);
   }
 
+  const rateKey = await getLoginRateKey(request, email);
+  if (await isLoginBlocked(env, rateKey)) {
+    return json(
+      { error: "Too many failed login attempts. Try again later." },
+      429,
+      { "Retry-After": String(Math.ceil(LOGIN_BLOCK_MS / 1000)) },
+    );
+  }
+
   const user = await getUserByEmail(env, email);
-  const genericError = () => json({ error: "Invalid email or password." }, 401);
+  const genericError = async () => {
+    await recordFailedLogin(env, rateKey);
+    return json({ error: "Invalid email or password." }, 401);
+  };
 
   if (!user || user.status !== "ACTIVE" || !user.password_hash) {
     return genericError();
@@ -47,6 +122,8 @@ export async function login(request: Request, env: Env): Promise<Response> {
 
   const valid = await verifyPassword(password, user.password_hash);
   if (!valid) return genericError();
+
+  await clearFailedLogins(env, rateKey);
 
   const token = generateToken();
   const tokenHash = await hashToken(token);
