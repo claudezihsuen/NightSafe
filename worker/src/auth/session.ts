@@ -22,7 +22,7 @@ export async function hashToken(token: string): Promise<string> {
 interface CookieOptions {
   maxAgeSeconds?: number; // omit (or 0) to expire the cookie immediately
   secure: boolean;
-  sameSite: "Lax" | "None";
+  sameSite: "Lax";
 }
 
 function buildCookie(value: string, { maxAgeSeconds, secure, sameSite }: CookieOptions): string {
@@ -38,13 +38,10 @@ function buildCookie(value: string, { maxAgeSeconds, secure, sameSite }: CookieO
 }
 
 function cookieOptions(env: Env): Pick<CookieOptions, "secure" | "sameSite"> {
-  const secure = env.ENVIRONMENT !== "development";
-
-  // Production currently serves the frontend from pages.dev and the API from
-  // workers.dev, which are different sites. Cross-site credentialed fetches
-  // therefore require SameSite=None together with Secure. Local development
-  // stays Lax so http://localhost continues to work.
-  return { secure, sameSite: secure ? "None" : "Lax" };
+  // Hosted browsers now use the Cloudflare Pages /api/* same-origin proxy,
+  // so production/staging sessions can use first-party SameSite=Lax cookies.
+  // Secure stays disabled only for local HTTP development.
+  return { secure: env.ENVIRONMENT !== "development", sameSite: "Lax" };
 }
 
 export function sessionCookieHeader(token: string, env: Env): string {
