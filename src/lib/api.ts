@@ -1,4 +1,18 @@
-export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8787";
+function resolveApiUrl(): string {
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    const isLocal = host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+
+    // Hosted NightSafe uses the Cloudflare Pages /api/* Function proxy. This
+    // keeps the session cookie first-party and also works on future custom
+    // Pages domains without another frontend rebuild.
+    if (!isLocal) return "";
+  }
+
+  return import.meta.env.VITE_API_URL ?? "http://localhost:8787";
+}
+
+export const API_URL = resolveApiUrl();
 
 export class ApiError extends Error {
   status: number;

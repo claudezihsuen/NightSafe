@@ -8,7 +8,7 @@ on:
 
 jobs:
   frontend:
-    name: Frontend build
+    name: Frontend and Pages build checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,11 +20,13 @@ jobs:
           package-manager-cache: false
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Build
+      - name: Build frontend
         run: npm run build
+      - name: Validate Pages API proxy syntax
+        run: node --check 'functions/api/[[path]].js'
 
   worker:
-    name: Worker typecheck and bundle
+    name: Worker checks and D1 invariants
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -43,3 +45,5 @@ jobs:
         run: npm run typecheck
       - name: Bundle Worker without deploying
         run: npm run bundle:check
+      - name: Test D1 business invariants
+        run: npm run test:invariants
