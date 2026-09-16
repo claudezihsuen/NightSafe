@@ -3,6 +3,7 @@ import { AuthProvider } from "@/lib/auth-context";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { LoginPage } from "@/pages/auth/LoginPage";
+import { ForgotPasswordPage } from "@/pages/auth/ForgotPasswordPage";
 import { ActivateAccountPage } from "@/pages/auth/ActivateAccountPage";
 import { SettingsPage } from "@/pages/settings/SettingsPage";
 import { AdminLayout } from "@/layouts/AdminLayout";
@@ -61,6 +62,7 @@ export default function App() {
       <I18nProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/invite/:token" element={<ActivateAccountPage />} />
 
           <Route path="/admin" element={<ProtectedRoute allowedRoles={["SUPER_ADMIN", "ADMIN"]}><AdminProvider><AdminLayout /></AdminProvider></ProtectedRoute>}>
