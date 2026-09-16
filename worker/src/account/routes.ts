@@ -1,7 +1,7 @@
 import type { Env, Language, SessionUser, UserRow } from "../types";
 import { getUserById, toSessionUser } from "../db";
 import { hashPassword, verifyPassword } from "../auth/hash";
-import { generateToken, hashToken, readSessionToken } from "../auth/session";
+import { hashToken, readSessionToken } from "../auth/session";
 import { generateTotpSecret, totpUri, verifyTotp } from "./totp";
 import { maskEmail, sendVerificationEmail } from "./email";
 
