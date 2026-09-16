@@ -29,7 +29,8 @@ function literalKeys(file) {
 const baseKeys = literalKeys("src/i18n/translations.ts");
 const zhKeys = literalKeys("src/i18n/expanded-zh.ts");
 const taKeys = literalKeys("src/i18n/expanded-ta.ts");
-const translatedLiterals = new Set([...baseKeys, ...zhKeys]);
+const extraKeys = literalKeys("src/i18n/expanded-extra.ts");
+const translatedLiterals = new Set([...baseKeys, ...zhKeys, ...extraKeys]);
 
 const mismatchedExpandedKeys = [
   ...[...zhKeys].filter((key) => !taKeys.has(key)).map((key) => `Missing Tamil translation: ${key}`),
