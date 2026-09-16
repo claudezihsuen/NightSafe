@@ -22,28 +22,37 @@ export async function hashToken(token: string): Promise<string> {
 interface CookieOptions {
   maxAgeSeconds?: number; // omit (or 0) to expire the cookie immediately
   secure: boolean;
+  sameSite: "Lax" | "None";
 }
 
-function buildCookie(value: string, { maxAgeSeconds, secure }: CookieOptions): string {
+function buildCookie(value: string, { maxAgeSeconds, secure, sameSite }: CookieOptions): string {
   const parts = [
     `${SESSION_COOKIE}=${value}`,
     "Path=/",
     "HttpOnly",
-    "SameSite=Lax",
+    `SameSite=${sameSite}`,
     `Max-Age=${maxAgeSeconds ?? 0}`,
   ];
   if (secure) parts.push("Secure");
   return parts.join("; ");
 }
 
-export function sessionCookieHeader(token: string, env: Env): string {
+function cookieOptions(env: Env): Pick<CookieOptions, "secure" | "sameSite"> {
   const secure = env.ENVIRONMENT !== "development";
-  return buildCookie(token, { maxAgeSeconds: SESSION_TTL_SECONDS, secure });
+
+  // Production currently serves the frontend from pages.dev and the API from
+  // workers.dev, which are different sites. Cross-site credentialed fetches
+  // therefore require SameSite=None together with Secure. Local development
+  // stays Lax so http://localhost continues to work.
+  return { secure, sameSite: secure ? "None" : "Lax" };
+}
+
+export function sessionCookieHeader(token: string, env: Env): string {
+  return buildCookie(token, { maxAgeSeconds: SESSION_TTL_SECONDS, ...cookieOptions(env) });
 }
 
 export function clearedSessionCookieHeader(env: Env): string {
-  const secure = env.ENVIRONMENT !== "development";
-  return buildCookie("", { maxAgeSeconds: 0, secure });
+  return buildCookie("", { maxAgeSeconds: 0, ...cookieOptions(env) });
 }
 
 export function readSessionToken(request: Request): string | null {
