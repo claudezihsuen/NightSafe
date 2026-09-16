@@ -76,6 +76,12 @@ exec(
   { expectFailure: true, quiet: true },
 );
 
+console.log("Checking property-wide/unit assignment overlap guard...");
+exec(
+  "INSERT INTO agent_assignments (id,agent_id,property_id,unit_id) VALUES ('assign-whole','agent','p1',NULL)",
+  { expectFailure: true, quiet: true },
+);
+
 console.log("Checking archived property assignment guard...");
 exec(
   "INSERT INTO agent_assignments (id,agent_id,property_id,unit_id) VALUES ('assign3','agent','p2','u3')",
