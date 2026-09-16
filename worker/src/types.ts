@@ -8,6 +8,9 @@ export interface Env {
   FRONTEND_URL: string; // e.g. http://localhost:5173 or https://nightsafe.pages.dev
   RESEND_API_KEY?: string; // optional transactional-email provider key
   EMAIL_FROM?: string; // verified sender, e.g. NightSafe <no-reply@example.com>
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string;
+  TWILIO_FROM_NUMBER?: string;
 }
 
 export interface UserRow {
