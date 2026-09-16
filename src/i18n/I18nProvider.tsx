@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth-context";
 import type { Language } from "@/types";
 import { expandedLiteralTranslations } from "./expanded-translations";
+import { translateRuntimePattern } from "./dynamic-translations";
 import { interpolate, literalTranslations, messages } from "./translations";
 
 interface I18nContextValue {
@@ -72,7 +73,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
     const translateLiteral = (value: string): string => {
       const trimmed = value.trim();
-      const translated = dictionary[trimmed];
+      const translated = dictionary[trimmed] ?? translateRuntimePattern(trimmed, language);
       return translated ? value.replace(trimmed, translated) : value;
     };
 
