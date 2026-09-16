@@ -3,6 +3,7 @@ import { useAuth } from "@/lib/auth-context";
 import type { Role } from "@/types";
 
 const ROLE_HOME: Record<Role, string> = {
+  ADMIN: "/admin",
   OWNER: "/owner",
   AGENT: "/agent",
   UNIT_LEADER: "/unit-leader",
@@ -30,9 +31,6 @@ export function ProtectedRoute({ allowedRoles, children }: ProtectedRouteProps) 
   }
 
   if (!allowedRoles.includes(user.role)) {
-    // Signed in, just not for this area — send them to their own home
-    // rather than a dead end. The API independently rejects any request
-    // outside the user's role regardless of what the UI shows.
     return <Navigate to={ROLE_HOME[user.role]} replace />;
   }
 
