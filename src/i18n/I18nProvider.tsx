@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth-context";
 import type { Language } from "@/types";
+import { expandedLiteralTranslations } from "./expanded-translations";
 import { interpolate, literalTranslations, messages } from "./translations";
 
 interface I18nContextValue {
@@ -21,6 +22,16 @@ function storedLanguage(): Language {
   if (typeof window === "undefined") return "EN";
   const value = window.localStorage.getItem(STORAGE_KEY);
   return value === "ZH" || value === "TA" || value === "EN" ? value : "EN";
+}
+
+function messageLiteralDictionary(language: Language): Record<string, string> {
+  const dictionary: Record<string, string> = {};
+  for (const key of Object.keys(messages.EN)) {
+    const source = messages.EN[key];
+    const translated = messages[language][key] ?? source;
+    if (source) dictionary[source] = translated;
+  }
+  return dictionary;
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
@@ -51,9 +62,19 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.lang = language === "ZH" ? "zh-CN" : language === "TA" ? "ta" : "en";
-    const dictionary = literalTranslations[language];
+    const dictionary = {
+      ...messageLiteralDictionary(language),
+      ...literalTranslations[language],
+      ...expandedLiteralTranslations[language],
+    };
     const textState = textRecords.current;
     const attributeState = attributeRecords.current;
+
+    const translateLiteral = (value: string): string => {
+      const trimmed = value.trim();
+      const translated = dictionary[trimmed];
+      return translated ? value.replace(trimmed, translated) : value;
+    };
 
     const translateText = (node: Text) => {
       const parent = node.parentElement;
@@ -61,9 +82,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       const current = node.data;
       const previous = textState.get(node);
       const source = previous && current === previous.rendered ? previous.source : current;
-      const trimmed = source.trim();
-      const translated = dictionary[trimmed];
-      const rendered = translated ? source.replace(trimmed, translated) : source;
+      const rendered = translateLiteral(source);
       textState.set(node, { source, rendered });
       if (current !== rendered) node.data = rendered;
     };
@@ -71,12 +90,12 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     const translateAttributes = (element: Element) => {
       if (element.closest("[data-i18n-skip]")) return;
       const state = attributeState.get(element) ?? {};
-      for (const attribute of ["placeholder", "title", "aria-label"] as const) {
+      for (const attribute of ["placeholder", "title", "aria-label", "aria-description", "alt"] as const) {
         const current = element.getAttribute(attribute);
         if (!current) continue;
         const previous = state[attribute];
         const source = previous && current === previous.rendered ? previous.source : current;
-        const rendered = dictionary[source.trim()] ?? source;
+        const rendered = translateLiteral(source);
         state[attribute] = { source, rendered };
         if (current !== rendered) element.setAttribute(attribute, rendered);
       }
@@ -100,14 +119,35 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     };
 
     translateTree(document.body);
+
+    const originalAlert = window.alert.bind(window);
+    const originalConfirm = window.confirm.bind(window);
+    const originalPrompt = window.prompt.bind(window);
+    window.alert = (message?: unknown) => originalAlert(translateLiteral(String(message ?? "")));
+    window.confirm = (message?: string) => originalConfirm(translateLiteral(String(message ?? "")));
+    window.prompt = (message?: string, defaultValue?: string) => originalPrompt(translateLiteral(String(message ?? "")), defaultValue);
+
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         if (mutation.type === "characterData") translateText(mutation.target as Text);
+        if (mutation.type === "attributes" && mutation.target instanceof Element) translateAttributes(mutation.target);
         for (const node of mutation.addedNodes) translateTree(node);
       }
     });
-    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
-    return () => observer.disconnect();
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["placeholder", "title", "aria-label", "aria-description", "alt"],
+    });
+
+    return () => {
+      observer.disconnect();
+      window.alert = originalAlert;
+      window.confirm = originalConfirm;
+      window.prompt = originalPrompt;
+    };
   }, [language]);
 
   const value = useMemo<I18nContextValue>(() => ({ language, setLanguage, t, greeting }), [language, setLanguage, t, greeting]);
