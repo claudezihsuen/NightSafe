@@ -7,12 +7,22 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import type { AuthUser } from "@/types";
+import type { AuthUser, Role } from "@/types";
+
+const ROLE_HOME: Record<Role, string> = {
+  ADMIN: "/admin",
+  OWNER: "/owner",
+  AGENT: "/agent",
+  UNIT_LEADER: "/unit-leader",
+  TENANT: "/tenant",
+};
+
+type InvitePurpose = "activation" | "reset";
 
 type InviteState =
   | { kind: "loading" }
   | { kind: "invalid"; message: string }
-  | { kind: "ready"; name: string; email: string };
+  | { kind: "ready"; name: string; email: string; purpose: InvitePurpose };
 
 export function ActivateAccountPage() {
   const { token } = useParams<{ token: string }>();
@@ -26,9 +36,13 @@ export function ActivateAccountPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setInvite({ kind: "invalid", message: "This invitation link is invalid." });
+      return;
+    }
+
     api
-      .get<{ name: string; email: string }>(`/api/auth/invite/${token}`)
+      .get<{ name: string; email: string; purpose: InvitePurpose }>(`/api/auth/invite/${token}`)
       .then((data) => setInvite({ kind: "ready", ...data }))
       .catch((err) =>
         setInvite({
@@ -42,6 +56,10 @@ export function ActivateAccountPage() {
     e.preventDefault();
     setError(null);
 
+    if (!token) {
+      setError("This invitation link is invalid.");
+      return;
+    }
     if (password.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
@@ -53,15 +71,32 @@ export function ActivateAccountPage() {
 
     setSubmitting(true);
     try {
-      await api.post<{ user: AuthUser }>(`/api/auth/activate/${token}`, { password });
+      const data = await api.post<{ user: AuthUser; signedIn: boolean }>(
+        `/api/auth/activate/${token}`,
+        { password },
+      );
+
+      if (!data.signedIn) {
+        await refresh();
+        navigate("/login", {
+          replace: true,
+          state: {
+            message: "Password updated. Your account is currently disabled; contact an administrator to enable it.",
+          },
+        });
+        return;
+      }
+
       await refresh();
-      navigate("/tenant", { replace: true });
+      navigate(ROLE_HOME[data.user.role], { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     } finally {
       setSubmitting(false);
     }
   }
+
+  const isReset = invite.kind === "ready" && invite.purpose === "reset";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas px-4">
@@ -70,12 +105,14 @@ export function ActivateAccountPage() {
           <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-input bg-midnight-700">
             <ShieldCheck className="h-6 w-6 text-sage-200" />
           </div>
-          <h1 className="text-lg font-semibold text-ink">Activate your account</h1>
+          <h1 className="text-lg font-semibold text-ink">
+            {isReset ? "Reset your password" : "Activate your account"}
+          </h1>
           <p className="text-sm text-ink/60">Your space. Managed with care.</p>
         </div>
 
         {invite.kind === "loading" && (
-          <p className="text-center text-sm text-ink/60">Checking your invitation…</p>
+          <p className="text-center text-sm text-ink/60">Checking your link…</p>
         )}
 
         {invite.kind === "invalid" && (
@@ -85,9 +122,10 @@ export function ActivateAccountPage() {
         {invite.kind === "ready" && (
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
             <p className="text-sm text-ink/70">
-              Welcome, <span className="font-medium text-ink">{invite.name}</span>. Set a password
-              for <span className="font-medium text-ink">{invite.email}</span> to activate your
-              account.
+              {invite.purpose === "activation" ? "Welcome" : "Hello"},{" "}
+              <span className="font-medium text-ink">{invite.name}</span>.{" "}
+              {invite.purpose === "activation" ? "Set" : "Choose"} a password for{" "}
+              <span className="font-medium text-ink">{invite.email}</span>.
             </p>
             <Input
               label="Password"
@@ -108,7 +146,7 @@ export function ActivateAccountPage() {
             />
             {error && <p className="text-sm text-status-overdue">{error}</p>}
             <Button type="submit" className="mt-2 w-full" loading={submitting}>
-              Activate account
+              {invite.purpose === "activation" ? "Activate account" : "Update password"}
             </Button>
           </form>
         )}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -9,6 +9,7 @@ import { useAuth, ApiError } from "@/lib/auth-context";
 import type { Role } from "@/types";
 
 const ROLE_HOME: Record<Role, string> = {
+  ADMIN: "/admin",
   OWNER: "/owner",
   AGENT: "/agent",
   UNIT_LEADER: "/unit-leader",
@@ -17,11 +18,14 @@ const ROLE_HOME: Record<Role, string> = {
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const message = (location.state as { message?: string } | null)?.message;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -49,6 +53,7 @@ export function LoginPage() {
         </div>
 
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+          {message && <p className="rounded-input bg-status-confirmed/10 px-3 py-2 text-sm text-status-confirmed">{message}</p>}
           <Input
             label="Email"
             type="email"

@@ -9,9 +9,6 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-// Reset links are deliberately much shorter-lived than a first-activation
-// invite (7 days) — a password reset link is a higher-value target if
-// intercepted, since the account is already otherwise fully set up.
 const RESET_TTL_MS = 1000 * 60 * 60; // 1 hour
 
 export interface AdminUserRow {
@@ -33,18 +30,19 @@ export async function listUsers(env: Env): Promise<Response> {
   return json({ users: results ?? [] });
 }
 
-/**
- * POST /api/admin/users/:id/reset-password
- * Issues a fresh one-time link via the *existing* invitations/activation
- * mechanism — no new activation code path, no plaintext password ever
- * generated or transmitted. Admin receives a link to copy/share (e.g. via
- * WhatsApp manually); the token itself is never logged.
- */
-export async function initiatePasswordReset(env: Env, actor: SessionUser, targetUserId: string): Promise<Response> {
-  const target = await env.DB.prepare("SELECT id, name FROM users WHERE id = ?")
+/** POST /api/admin/users/:id/reset-password */
+export async function initiatePasswordReset(
+  env: Env,
+  actor: SessionUser,
+  targetUserId: string,
+): Promise<Response> {
+  const target = await env.DB.prepare("SELECT id, name, status FROM users WHERE id = ?")
     .bind(targetUserId)
-    .first<{ id: string; name: string }>();
+    .first<{ id: string; name: string; status: string }>();
   if (!target) return json({ error: "Account not found." }, 404);
+  if (target.status === "WAITING_FOR_ACTIVATION") {
+    return json({ error: "This account already has an activation link." }, 409);
+  }
 
   const token = generateToken();
   const tokenHash = await hashToken(token);
@@ -52,26 +50,35 @@ export async function initiatePasswordReset(env: Env, actor: SessionUser, target
   const auditLogId = crypto.randomUUID();
 
   await env.DB.batch([
+    // Only the newest reset link should remain usable.
+    env.DB.prepare(
+      "UPDATE invitations SET used_at = datetime('now') WHERE user_id = ? AND used_at IS NULL",
+    ).bind(targetUserId),
     env.DB.prepare("INSERT INTO invitations (token_hash, user_id, expires_at) VALUES (?, ?, ?)").bind(
       tokenHash,
       targetUserId,
       expiresAt,
     ),
-    // Audit the action, never the token or any password.
     env.DB.prepare(
       `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id)
        VALUES (?, ?, 'ADMIN_PASSWORD_RESET_INITIATED', 'user', ?)`,
     ).bind(auditLogId, actor.id, targetUserId),
   ]);
 
+  const frontendUrl = env.FRONTEND_URL.replace(/\/+$/, "");
   return json({
-    resetLink: `${env.FRONTEND_URL}/invite/${token}`,
+    resetLink: `${frontendUrl}/invite/${token}`,
     expiresAt,
   });
 }
 
 /** PATCH /api/admin/users/:id/status — body: { status: "ACTIVE" | "INACTIVE" } */
-export async function setUserStatus(request: Request, env: Env, actor: SessionUser, targetUserId: string): Promise<Response> {
+export async function setUserStatus(
+  request: Request,
+  env: Env,
+  actor: SessionUser,
+  targetUserId: string,
+): Promise<Response> {
   if (targetUserId === actor.id) {
     return json({ error: "You can't change your own account status." }, 400);
   }
@@ -91,13 +98,23 @@ export async function setUserStatus(request: Request, env: Env, actor: SessionUs
   }
 
   const auditLogId = crypto.randomUUID();
-  await env.DB.batch([
+  const statements = [
     env.DB.prepare("UPDATE users SET status = ? WHERE id = ?").bind(status, targetUserId),
     env.DB.prepare(
       `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id)
        VALUES (?, ?, ?, 'user', ?)`,
-    ).bind(auditLogId, actor.id, status === "ACTIVE" ? "ADMIN_ACCOUNT_ENABLED" : "ADMIN_ACCOUNT_DISABLED", targetUserId),
-  ]);
+    ).bind(
+      auditLogId,
+      actor.id,
+      status === "ACTIVE" ? "ADMIN_ACCOUNT_ENABLED" : "ADMIN_ACCOUNT_DISABLED",
+      targetUserId,
+    ),
+  ];
 
+  if (status === "INACTIVE") {
+    statements.push(env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(targetUserId));
+  }
+
+  await env.DB.batch(statements);
   return json({ ok: true });
 }

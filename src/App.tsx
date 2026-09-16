@@ -6,6 +6,10 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { ActivateAccountPage } from "@/pages/auth/ActivateAccountPage";
 
+import { AdminLayout } from "@/layouts/AdminLayout";
+import { AdminUsers } from "@/pages/admin/AdminUsers";
+import { AdminProvider } from "@/lib/admin-context";
+
 import { OwnerLayout } from "@/layouts/OwnerLayout";
 import { OwnerDashboard } from "@/pages/owner/OwnerDashboard";
 import { OwnerProperties } from "@/pages/owner/OwnerProperties";
@@ -60,6 +64,19 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/invite/:token" element={<ActivateAccountPage />} />
+
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <AdminProvider>
+                <AdminLayout />
+              </AdminProvider>
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<AdminUsers />} />
+        </Route>
 
         <Route
           path="/owner"

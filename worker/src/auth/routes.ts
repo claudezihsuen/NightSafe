@@ -1,5 +1,6 @@
 import type { Env, Role, SessionUser } from "../types";
 import { getUserByEmail, getUserById, createSession, deleteSession, toSessionUser } from "../db";
+import { isAllowedBrowserOrigin } from "../cors";
 import { hashPassword, verifyPassword } from "./hash";
 import {
   generateToken,
@@ -17,10 +18,18 @@ function json(data: unknown, status = 200, extraHeaders: HeadersInit = {}): Resp
   });
 }
 
+function rejectCrossOriginBrowserMutation(request: Request, env: Env): Response | null {
+  if (isAllowedBrowserOrigin(request, env)) return null;
+  return json({ error: "Not authorized." }, 403);
+}
+
 export const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
 /** POST /api/auth/login */
 export async function login(request: Request, env: Env): Promise<Response> {
+  const originError = rejectCrossOriginBrowserMutation(request, env);
+  if (originError) return originError;
+
   const body = await request.json().catch(() => null);
   const email = typeof body?.email === "string" ? body.email : "";
   const password = typeof body?.password === "string" ? body.password : "";
@@ -30,10 +39,6 @@ export async function login(request: Request, env: Env): Promise<Response> {
   }
 
   const user = await getUserByEmail(env, email);
-
-  // Same generic error whether the email doesn't exist, the account is
-  // still pending activation, or the password is wrong — avoids leaking
-  // which emails are registered.
   const genericError = () => json({ error: "Invalid email or password." }, 401);
 
   if (!user || user.status !== "ACTIVE" || !user.password_hash) {
@@ -54,6 +59,9 @@ export async function login(request: Request, env: Env): Promise<Response> {
 
 /** POST /api/auth/logout */
 export async function logout(request: Request, env: Env): Promise<Response> {
+  const originError = rejectCrossOriginBrowserMutation(request, env);
+  if (originError) return originError;
+
   const token = readSessionToken(request);
   if (token) {
     await deleteSession(env, await hashToken(token));
@@ -67,7 +75,7 @@ export async function me(sessionUser: SessionUser | null): Promise<Response> {
   return json({ user: sessionUser });
 }
 
-/** GET /api/auth/invite/:token — check an invite is valid before showing the activation form. */
+/** GET /api/auth/invite/:token — validates an activation/password-reset link. */
 export async function getInvite(env: Env, token: string): Promise<Response> {
   const tokenHash = await hashToken(token);
   const invite = await env.DB.prepare(
@@ -83,14 +91,23 @@ export async function getInvite(env: Env, token: string): Promise<Response> {
   const user = await getUserById(env, invite.user_id);
   if (!user) return json({ error: "This invitation link is invalid or has expired." }, 410);
 
-  return json({ name: user.name, email: user.email });
+  return json({
+    name: user.name,
+    email: user.email,
+    purpose: user.status === "WAITING_FOR_ACTIVATION" ? "activation" : "reset",
+  });
 }
 
 /**
- * POST /api/auth/activate — tenant sets their own password from the invite
- * link. This is the only place a tenant's password is ever created.
+ * POST /api/auth/activate/:token
+ * Sets/replaces the account password. First-time invitations activate the
+ * account. Password-reset links preserve the account's existing ACTIVE or
+ * INACTIVE status so a disabled account cannot re-enable itself.
  */
 export async function activate(request: Request, env: Env, token: string): Promise<Response> {
+  const originError = rejectCrossOriginBrowserMutation(request, env);
+  if (originError) return originError;
+
   const body = await request.json().catch(() => null);
   const password = typeof body?.password === "string" ? body.password : "";
 
@@ -109,11 +126,18 @@ export async function activate(request: Request, env: Env, token: string): Promi
     return json({ error: "This invitation link is invalid or has expired." }, 410);
   }
 
+  const existingUser = await getUserById(env, invite.user_id);
+  if (!existingUser) {
+    return json({ error: "This invitation link is invalid or has expired." }, 410);
+  }
+
   const passwordHash = await hashPassword(password);
+  const nextStatus = existingUser.status === "WAITING_FOR_ACTIVATION" ? "ACTIVE" : existingUser.status;
 
   await env.DB.batch([
-    env.DB.prepare("UPDATE users SET password_hash = ?, status = 'ACTIVE' WHERE id = ?").bind(
+    env.DB.prepare("UPDATE users SET password_hash = ?, status = ? WHERE id = ?").bind(
       passwordHash,
+      nextStatus,
       invite.user_id,
     ),
     env.DB.prepare("UPDATE invitations SET used_at = datetime('now') WHERE token_hash = ?").bind(
@@ -124,12 +148,21 @@ export async function activate(request: Request, env: Env, token: string): Promi
   const user = await getUserById(env, invite.user_id);
   if (!user) return json({ error: "Something went wrong." }, 500);
 
-  // Sign the tenant straight in.
+  // Disabled accounts may reset their password, but they remain disabled and
+  // are not given a usable session until an admin enables them again.
+  if (user.status !== "ACTIVE") {
+    return json(
+      { user: toSessionUser(user), signedIn: false },
+      200,
+      { "Set-Cookie": clearedSessionCookieHeader(env) },
+    );
+  }
+
   const sessionToken = generateToken();
   const sessionTokenHash = await hashToken(sessionToken);
   await createSession(env, user.id, sessionTokenHash, sessionExpiryIso());
 
-  return json({ user: toSessionUser(user) }, 200, {
+  return json({ user: toSessionUser(user), signedIn: true }, 200, {
     "Set-Cookie": sessionCookieHeader(sessionToken, env),
   });
 }

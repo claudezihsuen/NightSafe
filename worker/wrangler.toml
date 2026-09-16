@@ -1,9 +1,9 @@
 name = "nightsafe-api"
-main = "src/index.ts"
+main = "src/entry.ts"
 compatibility_date = "2024-09-23"
 
 [vars]
-ENVIRONMENT = "development"
+ENVIRONMENT = "production"
 FRONTEND_URL = "https://nightsafe.pages.dev"
 
 [[d1_databases]]
@@ -15,11 +15,9 @@ database_id = "451d7ba8-5ee9-47e6-b710-1795f02c18bb"
 binding = "FILES"
 bucket_name = "nightsafe-files"
 
-# For production, override vars via `wrangler deploy` environments or the
-# dashboard, e.g.:
-# [env.production.vars]
-# ENVIRONMENT = "production"
-# FRONTEND_URL = "https://app.nightsafe.example"
+# The base configuration above is production. Use `wrangler deploy` for
+# production and `wrangler deploy --env staging` for the isolated staging
+# environment below.
 
 # =============================================================================
 # STAGING — fully isolated from everything above. Nothing above this line is
