@@ -1,4 +1,5 @@
 import type { Env, SessionUser } from "../types";
+import { putValidatedFile, streamPrivateAttachment } from "./file-security";
 
 export function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -259,6 +260,12 @@ export async function deleteDepositItem(env: Env, actor: SessionUser, item: Depo
     return json({ error: "This deposit is finalized and its items can no longer be removed." }, 409);
   }
 
+  const { results: paymentReceipts } = await env.DB.prepare(
+    "SELECT receipt_key FROM deposit_payments WHERE deposit_item_id = ? AND receipt_key IS NOT NULL",
+  )
+    .bind(item.id)
+    .all<{ receipt_key: string }>();
+
   const auditLogId = crypto.randomUUID();
   await env.DB.batch([
     env.DB.prepare("DELETE FROM deposit_items WHERE id = ?").bind(item.id),
@@ -267,6 +274,10 @@ export async function deleteDepositItem(env: Env, actor: SessionUser, item: Depo
        VALUES (?, ?, 'DEPOSIT_ITEM_REMOVED', 'deposit_item', ?, ?)`,
     ).bind(auditLogId, actor.id, item.id, JSON.stringify({ leaseId: item.lease_id, name: item.name })),
   ]);
+
+  await Promise.all(
+    (paymentReceipts ?? []).map(({ receipt_key }) => env.FILES.delete(receipt_key).catch(() => undefined)),
+  );
 
   return json({ ok: true });
 }
@@ -319,25 +330,29 @@ export async function recordDepositPayment(
   const id = crypto.randomUUID();
   let receiptKey: string | null = null;
   if (receiptFile && receiptFile.size > 0) {
-    receiptKey = `deposits/${item.lease_id}/payments/${item.id}/${Date.now()}-${receiptFile.name}`;
-    await env.FILES.put(receiptKey, await receiptFile.arrayBuffer(), {
-      httpMetadata: { contentType: receiptFile.type || "application/octet-stream" },
-    });
+    const stored = await putValidatedFile(env, `deposits/${item.lease_id}/payments/${item.id}`, receiptFile);
+    if (!stored.ok) return json({ error: stored.error }, stored.status);
+    receiptKey = stored.fileKey;
   }
 
   const amountCents = Math.round(input.amountDollars * 100);
   const auditLogId = crypto.randomUUID();
 
-  await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO deposit_payments (id, deposit_item_id, amount, paid_at, method, receipt_key, recorded_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(id, item.id, amountCents, input.paidAt, input.method?.trim() || null, receiptKey, actor.id),
-    env.DB.prepare(
-      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
-       VALUES (?, ?, 'DEPOSIT_PAYMENT_RECORDED', 'deposit_item', ?, ?)`,
-    ).bind(auditLogId, actor.id, item.id, JSON.stringify({ leaseId: item.lease_id, amountCents })),
-  ]);
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO deposit_payments (id, deposit_item_id, amount, paid_at, method, receipt_key, recorded_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, item.id, amountCents, input.paidAt, input.method?.trim() || null, receiptKey, actor.id),
+      env.DB.prepare(
+        `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+         VALUES (?, ?, 'DEPOSIT_PAYMENT_RECORDED', 'deposit_item', ?, ?)`,
+      ).bind(auditLogId, actor.id, item.id, JSON.stringify({ leaseId: item.lease_id, amountCents })),
+    ]);
+  } catch (error) {
+    if (receiptKey) await env.FILES.delete(receiptKey).catch(() => undefined);
+    throw error;
+  }
 
   return json({ id }, 201);
 }
@@ -364,38 +379,51 @@ export async function createDeduction(
     return json({ error: "Amount must be a positive number." }, 400);
   }
 
+  if (input.depositItemId) {
+    const matchingItem = await env.DB.prepare("SELECT id FROM deposit_items WHERE id = ? AND lease_id = ?")
+      .bind(input.depositItemId, leaseId)
+      .first();
+    if (!matchingItem) {
+      return json({ error: "The selected deposit item does not belong to this lease." }, 400);
+    }
+  }
+
   const id = crypto.randomUUID();
   let receiptKey: string | null = null;
   if (receiptFile && receiptFile.size > 0) {
-    receiptKey = `deposits/${leaseId}/deductions/${id}/${Date.now()}-${receiptFile.name}`;
-    await env.FILES.put(receiptKey, await receiptFile.arrayBuffer(), {
-      httpMetadata: { contentType: receiptFile.type || "application/octet-stream" },
-    });
+    const stored = await putValidatedFile(env, `deposits/${leaseId}/deductions/${id}`, receiptFile);
+    if (!stored.ok) return json({ error: stored.error }, stored.status);
+    receiptKey = stored.fileKey;
   }
 
   const amountCents = Math.round(input.amountDollars * 100);
   const auditLogId = crypto.randomUUID();
 
-  await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO deposit_deductions (id, lease_id, deposit_item_id, name, amount, reason, description, receipt_key, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      id,
-      leaseId,
-      input.depositItemId || null,
-      input.name.trim(),
-      amountCents,
-      input.reason.trim(),
-      input.description?.trim() || null,
-      receiptKey,
-      actor.id,
-    ),
-    env.DB.prepare(
-      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
-       VALUES (?, ?, 'DEPOSIT_DEDUCTION_CREATED', 'deposit_deduction', ?, ?)`,
-    ).bind(auditLogId, actor.id, id, JSON.stringify({ leaseId, name: input.name, amountCents })),
-  ]);
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO deposit_deductions (id, lease_id, deposit_item_id, name, amount, reason, description, receipt_key, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        id,
+        leaseId,
+        input.depositItemId || null,
+        input.name.trim(),
+        amountCents,
+        input.reason.trim(),
+        input.description?.trim() || null,
+        receiptKey,
+        actor.id,
+      ),
+      env.DB.prepare(
+        `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+         VALUES (?, ?, 'DEPOSIT_DEDUCTION_CREATED', 'deposit_deduction', ?, ?)`,
+      ).bind(auditLogId, actor.id, id, JSON.stringify({ leaseId, name: input.name, amountCents })),
+    ]);
+  } catch (error) {
+    if (receiptKey) await env.FILES.delete(receiptKey).catch(() => undefined);
+    throw error;
+  }
 
   return json({ id }, 201);
 }
@@ -409,6 +437,11 @@ export async function deleteDeduction(env: Env, actor: SessionUser, deduction: D
        VALUES (?, ?, 'DEPOSIT_DEDUCTION_REMOVED', 'deposit_deduction', ?, ?)`,
     ).bind(auditLogId, actor.id, deduction.id, JSON.stringify({ leaseId: deduction.lease_id, name: deduction.name })),
   ]);
+
+  if (deduction.receipt_key) {
+    await env.FILES.delete(deduction.receipt_key).catch(() => undefined);
+  }
+
   return json({ ok: true });
 }
 
@@ -444,15 +477,7 @@ export async function recordReturn(env: Env, actor: SessionUser, leaseId: string
 }
 
 export async function streamDepositReceipt(env: Env, receiptKey: string | null): Promise<Response> {
-  if (!receiptKey) return new Response("Not found.", { status: 404 });
-  const object = await env.FILES.get(receiptKey);
-  if (!object) return new Response("Not found.", { status: 404 });
-  return new Response(object.body, {
-    headers: {
-      "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
-      "Cache-Control": "private, max-age=0",
-    },
-  });
+  return streamPrivateAttachment(env, receiptKey, "deposit-receipt");
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import type { Env, SessionUser } from "../types";
 import { streamUtilityReceipt } from "../shared/utility-review";
+import { putValidatedFile } from "../shared/file-security";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -114,54 +115,71 @@ export async function submitUtility(request: Request, env: Env, actor: SessionUs
   }
 
   const existing = await env.DB.prepare(
-    "SELECT id, status FROM utility_payments WHERE unit_id = ? AND type = ? AND month = ?",
+    "SELECT id, status, receipt_key FROM utility_payments WHERE unit_id = ? AND type = ? AND month = ?",
   )
     .bind(actor.unitId, type, month)
-    .first<{ id: string; status: string }>();
+    .first<{ id: string; status: string; receipt_key: string | null }>();
 
   if (existing && existing.status !== "WAITING_PAYMENT") {
     return json({ error: `This month's ${type.toLowerCase()} payment isn't awaiting submission.` }, 409);
   }
 
+  const stored = await putValidatedFile(env, `utilities/${actor.unitId}/${type}/${month}`, receipt);
+  if (!stored.ok) return json({ error: stored.error }, stored.status);
+
   const amountCents = Math.round(amountDollars * 100);
   const now = new Date().toISOString();
-  const receiptKey = `utilities/${actor.unitId}/${type}/${month}-${Date.now()}-${receipt.name}`;
+  const proposedId = existing?.id ?? crypto.randomUUID();
 
-  await env.FILES.put(receiptKey, await receipt.arrayBuffer(), {
-    httpMetadata: { contentType: receipt.type || "application/octet-stream" },
-  });
+  const row = await env.DB.prepare(
+    `INSERT INTO utility_payments (id, unit_id, type, month, amount, status, receipt_key, submitted_at)
+     VALUES (?, ?, ?, ?, ?, 'PENDING_REVIEW', ?, ?)
+     ON CONFLICT(unit_id, type, month) DO UPDATE SET
+       amount = excluded.amount,
+       status = 'PENDING_REVIEW',
+       receipt_key = excluded.receipt_key,
+       submitted_at = excluded.submitted_at,
+       payment_date = NULL,
+       reviewed_by = NULL,
+       reviewed_at = NULL,
+       reviewer_role = NULL
+     WHERE utility_payments.status = 'WAITING_PAYMENT'
+     RETURNING id`,
+  )
+    .bind(proposedId, actor.unitId, type, month, amountCents, stored.fileKey, now)
+    .first<{ id: string }>();
 
-  let utilityId: string;
-
-  if (existing) {
-    utilityId = existing.id;
-    await env.DB.prepare(
-      `UPDATE utility_payments
-       SET status = 'PENDING_REVIEW', amount = ?, receipt_key = ?, submitted_at = ?
-       WHERE id = ?`,
-    )
-      .bind(amountCents, receiptKey, now, utilityId)
-      .run();
-  } else {
-    utilityId = crypto.randomUUID();
-    await env.DB.prepare(
-      `INSERT INTO utility_payments (id, unit_id, type, month, amount, status, receipt_key, submitted_at)
-       VALUES (?, ?, ?, ?, ?, 'PENDING_REVIEW', ?, ?)`,
-    )
-      .bind(utilityId, actor.unitId, type, month, amountCents, receiptKey, now)
-      .run();
+  if (!row) {
+    await env.FILES.delete(stored.fileKey).catch(() => undefined);
+    return json({ error: "This utility payment was already submitted or updated. Refresh and try again." }, 409);
   }
+
+  if (existing?.receipt_key && existing.receipt_key !== stored.fileKey) {
+    await env.FILES.delete(existing.receipt_key).catch(() => undefined);
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+     VALUES (?, ?, 'UTILITY_PAYMENT_SUBMITTED', 'utility_payment', ?, ?)`,
+  )
+    .bind(
+      crypto.randomUUID(),
+      actor.id,
+      row.id,
+      JSON.stringify({ unitId: actor.unitId, type, month, fileName: receipt.name, amountCents }),
+    )
+    .run();
 
   return json(
     {
       utility: {
-        id: utilityId,
+        id: row.id,
         unit_id: actor.unitId,
         type,
         month,
         amount: amountCents,
         status: "PENDING_REVIEW",
-        receipt_key: receiptKey,
+        receipt_key: stored.fileKey,
         submitted_at: now,
       },
     },

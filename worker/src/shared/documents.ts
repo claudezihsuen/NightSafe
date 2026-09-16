@@ -1,4 +1,5 @@
 import type { Env, SessionUser } from "../types";
+import { putValidatedFile, streamPrivateAttachment } from "./file-security";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -18,18 +19,6 @@ export interface DocumentRow {
 }
 
 export type LeaseScopeCheck = (env: Env, actor: SessionUser, leaseId: string) => Promise<boolean>;
-
-export async function streamDocument(env: Env, fileKey: string): Promise<Response> {
-  const object = await env.FILES.get(fileKey);
-  if (!object) return new Response("Not found.", { status: 404 });
-
-  return new Response(object.body, {
-    headers: {
-      "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
-      "Cache-Control": "private, max-age=0",
-    },
-  });
-}
 
 export function createDocumentRoutes(verifyLease: LeaseScopeCheck) {
   async function getLeaseTenantId(env: Env, leaseId: string): Promise<string | null> {
@@ -75,34 +64,38 @@ export function createDocumentRoutes(verifyLease: LeaseScopeCheck) {
         return json({ error: "A file is required." }, 400);
       }
 
-      const id = crypto.randomUUID();
-      const fileKey = `agreements/${tenantId}/${Date.now()}-${file.name}`;
-      await env.FILES.put(fileKey, await file.arrayBuffer(), {
-        httpMetadata: { contentType: file.type || "application/octet-stream" },
-      });
+      const stored = await putValidatedFile(env, `agreements/${tenantId}`, file);
+      if (!stored.ok) return json({ error: stored.error }, stored.status);
 
+      const id = crypto.randomUUID();
       const auditLogId = crypto.randomUUID();
-      await env.DB.batch([
-        env.DB.prepare(
-          `INSERT INTO agreements (id, tenant_id, lease_id, file_key, file_name, uploaded_by)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-        ).bind(id, tenantId, leaseId, fileKey, file.name, actor.id),
-        env.DB.prepare(
-          `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
-           VALUES (?, ?, 'DOCUMENT_UPLOADED', 'document', ?, ?)`,
-        ).bind(auditLogId, actor.id, id, JSON.stringify({ leaseId, fileName: file.name })),
-      ]);
+
+      try {
+        await env.DB.batch([
+          env.DB.prepare(
+            `INSERT INTO agreements (id, tenant_id, lease_id, file_key, file_name, uploaded_by)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+          ).bind(id, tenantId, leaseId, stored.fileKey, file.name, actor.id),
+          env.DB.prepare(
+            `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+             VALUES (?, ?, 'DOCUMENT_UPLOADED', 'document', ?, ?)`,
+          ).bind(auditLogId, actor.id, id, JSON.stringify({ leaseId, fileName: file.name })),
+        ]);
+      } catch (error) {
+        await env.FILES.delete(stored.fileKey).catch(() => undefined);
+        throw error;
+      }
 
       return json({ id, fileName: file.name }, 201);
     },
 
-    /** GET :id/download — streams the file, scope-verified via its lease. */
+    /** GET :id/download — streams the file as an attachment, scope-verified via its lease. */
     async download(env: Env, actor: SessionUser, documentId: string): Promise<Response> {
       const doc = await getDocumentById(env, documentId);
       if (!doc || !doc.lease_id || !(await verifyLease(env, actor, doc.lease_id))) {
         return new Response("Not found.", { status: 404 });
       }
-      return streamDocument(env, doc.file_key);
+      return streamPrivateAttachment(env, doc.file_key, doc.file_name);
     },
 
     /** DELETE :id — removes the D1 row and the R2 object. No soft-delete/versioning exists yet, so this is permanent. */

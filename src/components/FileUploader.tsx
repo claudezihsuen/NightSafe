@@ -9,6 +9,9 @@ interface FileUploaderProps {
   className?: string;
 }
 
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_FILE_TYPES = new Set(["application/pdf", "image/png", "image/jpeg"]);
+
 export function FileUploader({
   label = "Upload receipt",
   hint = "PNG, JPG or PDF, up to 10MB",
@@ -19,6 +22,7 @@ export function FileUploader({
   const [file, setFileState] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!file || !file.type.startsWith("image/")) {
@@ -31,8 +35,27 @@ export function FileUploader({
   }, [file]);
 
   const setFile = (next: File | null) => {
+    if (next) {
+      if (!ALLOWED_FILE_TYPES.has(next.type)) {
+        setError("Only PNG, JPG, or PDF files are allowed.");
+        setFileState(null);
+        onFileSelect?.(null);
+        if (inputRef.current) inputRef.current.value = "";
+        return;
+      }
+      if (next.size > MAX_FILE_BYTES) {
+        setError("File must be 10MB or smaller.");
+        setFileState(null);
+        onFileSelect?.(null);
+        if (inputRef.current) inputRef.current.value = "";
+        return;
+      }
+    }
+
+    setError(null);
     setFileState(next);
     onFileSelect?.(next);
+    if (!next && inputRef.current) inputRef.current.value = "";
   };
 
   return (
@@ -40,7 +63,7 @@ export function FileUploader({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*,application/pdf"
+        accept="image/png,image/jpeg,application/pdf"
         className="hidden"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
       />
@@ -110,6 +133,8 @@ export function FileUploader({
           <p className="text-xs text-ink/50">{hint}</p>
         </button>
       )}
+
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>
   );
 }
