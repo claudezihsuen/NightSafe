@@ -51,15 +51,9 @@ export function SettingsPage() {
   const [passwordFeedback, setPasswordFeedback] = useState<Feedback>(null);
   const [passwordSaving, setPasswordSaving] = useState(false);
 
-  const [emailChallenge, setEmailChallenge] = useState<string | null>(null);
-  const [emailTarget, setEmailTarget] = useState("");
-  const [emailSentTo, setEmailSentTo] = useState("");
   const [emailFeedback, setEmailFeedback] = useState<Feedback>(null);
   const [emailSaving, setEmailSaving] = useState(false);
 
-  const [phoneChallenge, setPhoneChallenge] = useState<string | null>(null);
-  const [phoneTarget, setPhoneTarget] = useState("");
-  const [phoneSentTo, setPhoneSentTo] = useState("");
   const [phoneFeedback, setPhoneFeedback] = useState<Feedback>(null);
   const [phoneSaving, setPhoneSaving] = useState(false);
 
@@ -141,82 +135,42 @@ export function SettingsPage() {
     }
   }
 
-  async function requestEmail(event: FormEvent<HTMLFormElement>) {
+  async function saveEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const email = String(form.get("email") ?? "");
     const currentPassword = String(form.get("currentPassword") ?? "");
     setEmailSaving(true);
     setEmailFeedback(null);
     try {
-      const response = await api.post<{ challengeId: string; sentTo: string }>("/api/account/email/request", { email, currentPassword });
-      setEmailChallenge(response.challengeId);
-      setEmailTarget(email);
-      setEmailSentTo(response.sentTo);
-      setEmailFeedback({ type: "success", text: `Verification code sent to ${response.sentTo}.` });
-    } catch (error) {
-      setEmailFeedback({ type: "error", text: messageFrom(error, "Couldn't send the verification code.") });
-    } finally {
-      setEmailSaving(false);
-    }
-  }
-
-  async function confirmEmail(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const code = String(new FormData(event.currentTarget).get("code") ?? "");
-    if (!emailChallenge) return;
-    setEmailSaving(true);
-    setEmailFeedback(null);
-    try {
-      await api.post("/api/account/email/confirm", { challengeId: emailChallenge, code });
-      setEmailChallenge(null);
-      setEmailTarget("");
-      setEmailSentTo("");
+      await api.patch<{ user: AuthUser }>("/api/account/email", { email, currentPassword });
+      formElement.reset();
       await refresh();
       await loadDevices();
       setEmailFeedback({ type: "success", text: t("settings.emailSaved") });
     } catch (error) {
-      setEmailFeedback({ type: "error", text: messageFrom(error, "Couldn't verify the new email address.") });
+      setEmailFeedback({ type: "error", text: messageFrom(error, "Couldn't update the email address.") });
     } finally {
       setEmailSaving(false);
     }
   }
 
-  async function requestPhone(event: FormEvent<HTMLFormElement>) {
+  async function savePhone(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const phone = String(form.get("phone") ?? "");
     const currentPassword = String(form.get("currentPassword") ?? "");
     setPhoneSaving(true);
     setPhoneFeedback(null);
     try {
-      const response = await api.post<{ challengeId: string; sentTo: string }>("/api/account/phone/request", { phone, currentPassword });
-      setPhoneChallenge(response.challengeId);
-      setPhoneTarget(phone);
-      setPhoneSentTo(response.sentTo);
-      setPhoneFeedback({ type: "success", text: `Verification code sent to ${response.sentTo}.` });
-    } catch (error) {
-      setPhoneFeedback({ type: "error", text: messageFrom(error, "Couldn't send the verification code.") });
-    } finally {
-      setPhoneSaving(false);
-    }
-  }
-
-  async function confirmPhone(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const code = String(new FormData(event.currentTarget).get("code") ?? "");
-    if (!phoneChallenge) return;
-    setPhoneSaving(true);
-    setPhoneFeedback(null);
-    try {
-      await api.post("/api/account/phone/confirm", { challengeId: phoneChallenge, code });
-      setPhoneChallenge(null);
-      setPhoneTarget("");
-      setPhoneSentTo("");
+      await api.patch<{ user: AuthUser }>("/api/account/phone", { phone, currentPassword });
+      formElement.reset();
       await refresh();
       setPhoneFeedback({ type: "success", text: t("settings.phoneSaved") });
     } catch (error) {
-      setPhoneFeedback({ type: "error", text: messageFrom(error, "Couldn't verify the phone number.") });
+      setPhoneFeedback({ type: "error", text: messageFrom(error, "Couldn't update the phone number.") });
     } finally {
       setPhoneSaving(false);
     }
@@ -336,8 +290,8 @@ export function SettingsPage() {
       <Card>
         <h2 className="font-semibold text-ink">{t("settings.securityChecklist")}</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <SecurityStatus icon={MailCheck} label={t("settings.verifiedEmail")} complete={user.emailVerified} completeText={t("settings.complete")} incompleteText={t("settings.incomplete")} />
-          <SecurityStatus icon={Phone} label={t("settings.verifiedPhone")} complete={user.phoneVerified} completeText={t("settings.complete")} incompleteText={t("settings.incomplete")} />
+          <SecurityStatus icon={MailCheck} label={t("settings.verifiedEmail")} complete={user.emailVerified} completeText={t("settings.complete")} incompleteText={t("settings.verificationDeferred")} />
+          <SecurityStatus icon={Phone} label={t("settings.verifiedPhone")} complete={user.phoneVerified} completeText={t("settings.complete")} incompleteText={t("settings.verificationDeferred")} />
           <SecurityStatus icon={ShieldCheck} label={t("settings.authenticator")} complete={user.twoFactorEnabled} completeText={t("settings.complete")} incompleteText={t("settings.incomplete")} />
         </div>
       </Card>
@@ -358,43 +312,35 @@ export function SettingsPage() {
         <Card>
           <h2 className="font-semibold text-ink">{t("settings.email")}</h2>
           <p className="mt-1 text-sm text-ink/60">{t("settings.emailDescription")}</p>
-          <p className="mt-3 rounded-input bg-sage-50 px-3 py-2 text-sm text-ink/70" data-i18n-skip>{user.email} · {user.emailVerified ? t("settings.emailVerified") : t("settings.emailNotVerified")}</p>
-          {!emailChallenge ? (
-            <form className="mt-4 space-y-3" onSubmit={requestEmail}>
-              <Input name="email" label={t("settings.newEmail")} type="email" autoComplete="email" required />
-              <Input name="currentPassword" label={t("common.currentPassword")} type="password" autoComplete="current-password" required />
-              <FeedbackLine feedback={emailFeedback} />
-              <Button type="submit" size="sm" loading={emailSaving}>{t("settings.sendEmailCode")}</Button>
-            </form>
-          ) : (
-            <form className="mt-4 space-y-3" onSubmit={confirmEmail}>
-              <p className="text-sm text-ink/60" data-i18n-skip>{emailTarget} · code sent to {emailSentTo}</p>
-              <Input name="code" label={t("common.verificationCode")} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" required />
-              <FeedbackLine feedback={emailFeedback} />
-              <div className="flex gap-2"><Button type="submit" size="sm" loading={emailSaving}>{t("common.verify")}</Button><Button type="button" size="sm" variant="secondary" onClick={() => setEmailChallenge(null)}>{t("common.cancel")}</Button></div>
-            </form>
-          )}
+          <div className="mt-3 rounded-input border border-status-waiting/25 bg-status-waiting/10 px-3 py-2 text-xs leading-relaxed text-ink/65">
+            {t("settings.contactVerificationNotice")}
+          </div>
+          <p className="mt-3 rounded-input bg-sage-50 px-3 py-2 text-sm text-ink/70" data-i18n-skip>
+            {user.email} · {user.emailVerified ? t("settings.emailVerified") : t("settings.verificationDeferred")}
+          </p>
+          <form className="mt-4 space-y-3" onSubmit={saveEmail}>
+            <Input name="email" label={t("settings.newEmail")} type="email" autoComplete="email" required />
+            <Input name="currentPassword" label={t("common.currentPassword")} type="password" autoComplete="current-password" required />
+            <FeedbackLine feedback={emailFeedback} />
+            <Button type="submit" size="sm" loading={emailSaving}>{t("settings.saveEmail")}</Button>
+          </form>
         </Card>
 
         <Card>
           <h2 className="font-semibold text-ink">{t("settings.phone")}</h2>
           <p className="mt-1 text-sm text-ink/60">{t("settings.phoneDescription")}</p>
-          <p className="mt-3 rounded-input bg-sage-50 px-3 py-2 text-sm text-ink/70" data-i18n-skip>{user.phone || t("settings.phoneNotAdded")} {user.phoneVerified ? `· ${t("settings.complete")}` : ""}</p>
-          {!phoneChallenge ? (
-            <form className="mt-4 space-y-3" onSubmit={requestPhone}>
-              <Input name="phone" label={t("settings.newPhone")} type="tel" placeholder="+60123456789" autoComplete="tel" required />
-              <Input name="currentPassword" label={t("common.currentPassword")} type="password" autoComplete="current-password" required />
-              <FeedbackLine feedback={phoneFeedback} />
-              <Button type="submit" size="sm" loading={phoneSaving} disabled={!user.emailVerified}>{t("settings.sendPhoneCode")}</Button>
-            </form>
-          ) : (
-            <form className="mt-4 space-y-3" onSubmit={confirmPhone}>
-              <p className="text-sm text-ink/60" data-i18n-skip>{phoneTarget} · code sent to {phoneSentTo}</p>
-              <Input name="code" label={t("common.verificationCode")} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" required />
-              <FeedbackLine feedback={phoneFeedback} />
-              <div className="flex gap-2"><Button type="submit" size="sm" loading={phoneSaving}>{t("common.verify")}</Button><Button type="button" size="sm" variant="secondary" onClick={() => setPhoneChallenge(null)}>{t("common.cancel")}</Button></div>
-            </form>
-          )}
+          <div className="mt-3 rounded-input border border-status-waiting/25 bg-status-waiting/10 px-3 py-2 text-xs leading-relaxed text-ink/65">
+            {t("settings.contactVerificationNotice")}
+          </div>
+          <p className="mt-3 rounded-input bg-sage-50 px-3 py-2 text-sm text-ink/70" data-i18n-skip>
+            {user.phone || t("settings.phoneNotAdded")}{user.phone ? ` · ${user.phoneVerified ? t("settings.complete") : t("settings.verificationDeferred")}` : ""}
+          </p>
+          <form className="mt-4 space-y-3" onSubmit={savePhone}>
+            <Input name="phone" label={t("settings.newPhone")} type="tel" placeholder="+60123456789" autoComplete="tel" required />
+            <Input name="currentPassword" label={t("common.currentPassword")} type="password" autoComplete="current-password" required />
+            <FeedbackLine feedback={phoneFeedback} />
+            <Button type="submit" size="sm" loading={phoneSaving}>{t("settings.savePhone")}</Button>
+          </form>
         </Card>
       </div>
 
