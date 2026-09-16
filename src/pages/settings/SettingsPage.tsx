@@ -95,7 +95,7 @@ export function SettingsPage() {
       await api.patch<{ user: AuthUser }>("/api/account/language", { language: next });
       setLanguage(next);
       await refresh();
-      navigate(ROLE_HOME[user.role], { replace: true });
+      navigate(ROLE_HOME[user!.role], { replace: true });
     } catch (error) {
       setNicknameFeedback({ type: "error", text: messageFrom(error, "Couldn't update the language.") });
     }
