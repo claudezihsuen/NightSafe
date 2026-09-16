@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/i18n/I18nProvider";
 import { LANGUAGE_OPTIONS, ROLE_HOME } from "@/i18n/translations";
 import type { AuthUser, Language } from "@/types";
+import { AuthenticatorQr } from "@/components/account/AuthenticatorQr";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -376,7 +377,7 @@ export function SettingsPage() {
         <Card>
           <h2 className="font-semibold text-ink">{t("settings.phone")}</h2>
           <p className="mt-1 text-sm text-ink/60">{t("settings.phoneDescription")}</p>
-          <p className="mt-3 rounded-input bg-sage-50 px-3 py-2 text-sm text-ink/70" data-i18n-skip>{user.phone || t("settings.phoneNotAdded")} {user.phoneVerified ? `· ${t("settings.emailVerified")}` : ""}</p>
+          <p className="mt-3 rounded-input bg-sage-50 px-3 py-2 text-sm text-ink/70" data-i18n-skip>{user.phone || t("settings.phoneNotAdded")} {user.phoneVerified ? `· ${t("settings.complete")}` : ""}</p>
           {!phoneChallenge ? (
             <form className="mt-4 space-y-3" onSubmit={requestPhone}>
               <Input name="phone" label={t("settings.newPhone")} type="tel" placeholder="+60123456789" autoComplete="tel" required />
@@ -408,10 +409,19 @@ export function SettingsPage() {
               <Button type="submit" size="sm" loading={twoFactorSaving}>{t("settings.setup2fa")}</Button>
             </form>
           ) : (
-            <form className="mt-4 max-w-xl space-y-3" onSubmit={enableTwoFactor}>
+            <form className="mt-4 max-w-2xl space-y-4" onSubmit={enableTwoFactor}>
               <p className="text-sm text-ink/60">{t("settings.authenticatorInstructions")}</p>
-              <div className="rounded-input border border-border bg-canvas p-3" data-i18n-skip><p className="text-xs text-ink/50">{t("settings.authenticatorSecret")}</p><code className="mt-1 block break-all font-mono text-sm text-ink">{twoFactorSecret}</code></div>
-              {twoFactorUri && <a href={twoFactorUri} className="inline-flex text-sm font-medium text-sage-700 underline underline-offset-4">Open in authenticator app</a>}
+              <div className="grid gap-4 sm:grid-cols-[220px_1fr] sm:items-start">
+                {twoFactorUri && <AuthenticatorQr uri={twoFactorUri} />}
+                <div className="space-y-3">
+                  <div className="rounded-input border border-border bg-canvas p-3" data-i18n-skip>
+                    <p className="text-xs text-ink/50">Manual setup key</p>
+                    <code className="mt-1 block break-all font-mono text-sm font-semibold tracking-wide text-ink">{twoFactorSecret}</code>
+                  </div>
+                  {twoFactorUri && <a href={twoFactorUri} className="inline-flex text-sm font-medium text-sage-700 underline underline-offset-4">Open in authenticator app</a>}
+                  <p className="text-xs leading-relaxed text-ink/50">Scan the QR code with Google Authenticator or another compatible authenticator app. If scanning is unavailable, enter the manual setup key instead.</p>
+                </div>
+              </div>
               <Input name="code" label={t("common.verificationCode")} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" required />
               <FeedbackLine feedback={twoFactorFeedback} />
               <div className="flex gap-2"><Button type="submit" size="sm" loading={twoFactorSaving}>{t("settings.enable2fa")}</Button><Button type="button" size="sm" variant="secondary" onClick={() => { setTwoFactorSecret(null); setTwoFactorUri(null); }}>{t("common.cancel")}</Button></div>
