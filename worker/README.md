@@ -9,103 +9,108 @@ payments, deposits, agreements, notifications, and Admin account controls.
 ```bash
 cd worker
 npm install
-wrangler d1 create nightsafe-db     # copy the returned database_id into wrangler.toml
+wrangler d1 create nightsafe-db
 wrangler r2 bucket create nightsafe-files
-npm run db:migrate:local            # applies migrations/ in order
-npm run dev                         # runs on http://localhost:8787
+npm run db:migrate:local
+npm run dev
 ```
+
+Production and staging deployments are performed by GitHub Actions; production
+migrations and Worker deployment run automatically for Worker changes merged to
+`main`. See `STAGING.md` for the isolated manual staging workflow.
 
 ## Schema
 
 Migrations live in `migrations/`, applied in order via `wrangler d1 migrations apply`:
 
 - `0001_auth.sql` — `users`, `sessions`, `invitations`
-- `0002_core_schema.sql` — `properties`, `units`, `agent_assignments`, `leases`,
-  `rent_payments`, `utility_payments`, `agreements`, `notifications`, `audit_logs`
+- `0002_core_schema.sql` — properties, units, assignments, leases, payments, agreements, notifications, audit logs
 - `0003_tenant_creation.sql` — tenant activation status, phone, lease due day/deposit
 - `0004_agent_management.sql` — inactive user status and `users.created_by`
 - `0005_payment_review_tracking.sql` — rent payment review metadata
 - `0006_unit_leader_utilities.sql` — Unit Leader assignment and utility review metadata
 - `0007_deposits.sql` — deposit items, payments, deductions, and returns
 - `0008_property_unit_archive.sql` — archive support for properties and units
-- `0009_admin_role.sql` — adds the internal `ADMIN` role
-- `0010_super_admin.sql` — adds the `primary_admins` marker table; marked ADMIN users are exposed as `SUPER_ADMIN`
-- `0011_active_assignment_guards.sql` — enforces at most one ACTIVE lease per unit
-- `0012_login_rate_limits.sql` — stores hashed failed-login throttling state
-- `0013_single_primary_admin.sql` — makes `primary_admins` a true singleton
+- `0009_admin_role.sql` — internal `ADMIN` role
+- `0010_super_admin.sql` — `primary_admins` marker; marked ADMIN sessions are exposed as `SUPER_ADMIN`
+- `0011_active_assignment_guards.sql` — one ACTIVE lease per unit
+- `0012_login_rate_limits.sql` — hashed failed-login throttling state
+- `0013_single_primary_admin.sql` — one Primary Admin marker
+- `0014_business_invariants.sql` — assignment uniqueness, archived-target, Unit Leader, and deposit monetary guards
+- `0015_archived_inventory_write_guard.sql` — blocks new units under archived properties
 
-A property has many units; a unit reaches its tenant(s) through a lease; an
-agent's access is granted through `agent_assignments`. Rent payments key off
-`(lease_id, month)` and utility payments off `(unit_id, type, month)`.
+CI applies the full migration chain to a fresh local D1 and deliberately tries
+invalid writes. A PR fails if D1 accepts a duplicate Agent assignment, archived
+inventory write, duplicate active Unit Leader, deposit overpayment,
+over-deduction, or over-refund.
 
 ## Primary administrator
 
 NightSafe has exactly one `SUPER_ADMIN` (shown as **Primary Admin** in the UI).
 The database stores that account as `ADMIN` and marks it in `primary_admins`;
-the Worker promotes the marked account to `SUPER_ADMIN` in session/API data.
+the Worker promotes that marked account to `SUPER_ADMIN` in session/API data.
 It has all normal Admin capabilities plus the ability to invite additional
 `ADMIN` accounts.
 
-For a brand-new database, `scripts/bootstrap-super-admin.mjs` can create the
-initial one-time activation SQL after all migrations are applied. The deployed
-production instance has already completed this bootstrap. Do not bootstrap a
-second Primary Admin; migration `0013_single_primary_admin.sql` also prevents a
-second marker at the database level.
+Production bootstrap has already been completed. The one-time bootstrap workflow
+and bootstrap script are intentionally no longer kept in the repository.
+Migration `0013_single_primary_admin.sql` prevents a second Primary Admin marker.
 
-## Seeding other privileged accounts
+## Account management
 
-OWNER, AGENT, UNIT_LEADER, and development ADMIN accounts can be seeded with the
-helper script. TENANT accounts use the invitation flow. In production, prefer
-having the `SUPER_ADMIN` create normal Admin accounts from `/admin` so they use
-the one-time activation flow instead of a preselected password.
+In production, create normal Admin accounts from `/admin`. The Primary Admin
+receives an activation link for each new Admin; no administrator password is
+stored in source code or GitHub history.
 
-```bash
-node scripts/create-user.mjs "System Admin" admin@nightsafe.dev ADMIN a-strong-password
-node scripts/create-user.mjs "Jane Owner" jane@nightsafe.dev OWNER a-strong-password
-node scripts/create-user.mjs "Lee Ward" lee@nightsafe.dev UNIT_LEADER a-strong-password <unit-id>
-```
+OWNER creates Agents and Unit Leaders through their normal product flows. Tenant
+accounts are invitation-based. Server-side validation rejects malformed account
+emails even if a caller bypasses the browser form.
 
-## Admin account management
+`SUPER_ADMIN` and `ADMIN` can list accounts, generate one-hour password-reset
+links, and enable/disable activated accounts. Disabling an account removes its
+existing sessions. Only `SUPER_ADMIN` can add Admin accounts, and a normal Admin
+cannot reset or disable the Primary Admin.
 
-`SUPER_ADMIN` and `ADMIN` users sign in through the normal login page and are
-routed to `/admin`. Both can list NightSafe accounts, generate one-hour
-password-reset links, and enable/disable activated accounts. Disabling an
-account also removes its existing sessions.
+Password reset reuses the one-time invitation mechanism. Only the newest reset
+link remains valid. A disabled account may change its password using a reset link
+but remains disabled until an Admin enables it.
 
-Only `SUPER_ADMIN` sees and can use **Add Admin Account**. It creates a normal
-`ADMIN` in `WAITING_FOR_ACTIVATION` status and returns a seven-day activation
-link. A normal Admin cannot create another Admin and cannot reset or disable the
-primary administrator. The primary administrator itself cannot be disabled
-through the Admin API.
+## Browser/API architecture
 
-Password reset reuses NightSafe's one-time invitation mechanism. Only the newest
-reset link remains valid. A disabled account may change its password using a
-reset link but remains disabled until an Admin enables it.
+Hosted browser traffic uses a Cloudflare Pages Function at `/api/*`. The browser
+therefore talks to the same origin as the frontend and receives the HTTP-only
+session cookie as a first-party cookie. The Pages Function proxies requests to
+`nightsafe-api` (or to `nightsafe-staging` for the stable development preview).
 
-## Key endpoints
+The Pages proxy verifies the request Origin on unsafe methods before forwarding.
+The Worker retains its own Origin/CSRF checks as a second layer. Direct Worker
+access remains available for deployment diagnostics and non-browser clients, but
+the production frontend does not need third-party cookies.
 
-| Method | Path | Auth |
-|---|---|---|
-| POST | `/api/auth/login` | — |
-| POST | `/api/auth/logout` | — |
-| GET | `/api/auth/me` | session cookie |
-| GET | `/api/auth/invite/:token` | — |
-| POST | `/api/auth/activate/:token` | — |
-| GET | `/api/admin/users` | ADMIN or SUPER_ADMIN |
-| POST | `/api/admin/admins` | SUPER_ADMIN |
-| POST | `/api/admin/users/:id/reset-password` | ADMIN or SUPER_ADMIN |
-| PATCH | `/api/admin/users/:id/status` | ADMIN or SUPER_ADMIN |
-| GET | `/api/owner/properties` | OWNER |
-| POST | `/api/owner/tenants` | OWNER |
-| GET | `/api/owner/agreements` | OWNER |
-| GET | `/api/owner/agreements/:id/download` | OWNER |
-| GET | `/api/tenant/notifications` | TENANT |
-| POST | `/api/tenant/notifications/read-all` | TENANT |
+Sessions are HTTP-only and `Secure` outside local development. Repeated failed
+logins are throttled by a hashed IP+email key in D1. Passwords are hashed with
+PBKDF2-HMAC-SHA256 using a random salt and Workers Web Crypto.
 
-Production sessions are HTTP-only and `Secure`. Because the current Pages
-frontend and Workers API are on different sites, production uses
-`SameSite=None`; authenticated browser mutations are additionally restricted to
-the configured `FRONTEND_URL` origin. Development keeps a localhost-friendly
-cookie policy. Repeated failed logins are throttled by a hashed IP+email key in
-D1. Passwords are hashed with PBKDF2-HMAC-SHA256 (100k iterations, random salt)
-using Workers Web Crypto.
+## File security
+
+Receipts and agreements are limited to PDF, PNG, and JPEG up to 10 MB. The
+backend checks file signatures rather than trusting the uploaded MIME type,
+stores objects under generated R2 keys, serves private files as attachments with
+`nosniff`, and cleans R2 objects when related records are rolled back or removed.
+
+## Business invariants
+
+Important rules are enforced in both API behavior and D1 where possible:
+
+- archived properties/units cannot receive new tenants or Agent assignments
+- archived properties cannot receive new units
+- exact duplicate Agent assignments are rejected
+- one active/pending Unit Leader occupies a unit at a time
+- Unit Leader replacement releases the old leader and assigns the new one in one D1 batch
+- one ACTIVE lease can exist per unit
+- deposit items cannot be overpaid
+- deductions/returns cannot exceed refundable money actually paid and still held
+- non-refundable deposit charges cannot be returned as refundable money
+
+These D1 constraints are intentionally kept even when the UI already prevents
+the action, so direct API/database writes cannot silently create invalid state.
