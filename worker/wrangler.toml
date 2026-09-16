@@ -20,23 +20,15 @@ bucket_name = "nightsafe-files"
 # environment below.
 
 # =============================================================================
-# STAGING — fully isolated from everything above. Nothing above this line is
-# touched by `wrangler deploy --env staging`; nothing here is touched by a
-# bare `wrangler deploy` (which is what production's deploy command runs).
-#
-# One-time setup (see worker/STAGING.md for full walkthrough):
-#   npx wrangler d1 create nightsafe-staging-db      -> paste database_id below
-#   npx wrangler r2 bucket create nightsafe-staging-files
-#
-# Deploy:  npx wrangler deploy --env staging
-# Migrate: npx wrangler d1 migrations apply nightsafe-staging-db --env staging --remote
+# STAGING — isolated D1/R2/Worker. Browser requests are only accepted from
+# the dedicated `development` Pages preview alias. See worker/STAGING.md.
 # =============================================================================
 [env.staging]
 name = "nightsafe-staging"
 
 [env.staging.vars]
 ENVIRONMENT = "staging"
-FRONTEND_URL = "https://nightsafe-staging.claude-zihsuen.workers.dev/"
+FRONTEND_URL = "https://development.nightsafe.pages.dev"
 
 [[env.staging.d1_databases]]
 binding = "DB"
