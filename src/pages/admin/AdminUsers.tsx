@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useAdmin } from "@/lib/admin-context";
+import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api";
 import type { AdminUser } from "@/lib/admin-context";
 
@@ -23,6 +24,7 @@ const statusClasses: Record<AdminUser["status"], string> = {
 
 export function AdminUsers() {
   const { users, loading, error } = useAdmin();
+  const { user: currentUser } = useAuth();
 
   return (
     <>
@@ -44,7 +46,7 @@ export function AdminUsers() {
       {!loading && !error && users.length > 0 && (
         <div className="flex flex-col gap-3">
           {users.map((u) => (
-            <UserRow key={u.id} user={u} />
+            <UserRow key={u.id} user={u} isSelf={u.id === currentUser?.id} />
           ))}
         </div>
       )}
@@ -52,15 +54,17 @@ export function AdminUsers() {
   );
 }
 
-function UserRow({ user }: { user: AdminUser }) {
+function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
   const { resetPassword, setStatus } = useAdmin();
   const [resetLink, setResetLink] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"reset" | "status" | null>(null);
+  const [copied, setCopied] = useState(false);
 
   async function handleReset() {
     setBusy("reset");
     setError(null);
+    setCopied(false);
     try {
       const data = await resetPassword(user.id);
       setResetLink(data.resetLink);
@@ -72,6 +76,7 @@ function UserRow({ user }: { user: AdminUser }) {
   }
 
   async function handleToggleStatus() {
+    if (isSelf) return;
     setBusy("status");
     setError(null);
     try {
@@ -83,15 +88,28 @@ function UserRow({ user }: { user: AdminUser }) {
     }
   }
 
+  async function handleCopy() {
+    if (!resetLink) return;
+    try {
+      await navigator.clipboard.writeText(resetLink);
+      setCopied(true);
+    } catch {
+      setError("Couldn't copy the link. Select and copy it manually.");
+    }
+  }
+
   const whatsappMessage = resetLink
-    ? `Welcome to NightSafe.\n\nSet your password here:\n${resetLink}\n\nThis link expires in 1 hour.`
+    ? `NightSafe password reset\n\nSet your password here:\n${resetLink}\n\nThis link expires in 1 hour.`
     : "";
 
   return (
     <Card>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate font-medium text-ink">{user.name}</p>
+          <p className="truncate font-medium text-ink">
+            {user.name}
+            {isSelf ? <span className="ml-2 text-xs font-normal text-ink/50">You</span> : null}
+          </p>
           <p className="truncate text-sm text-ink/60">
             {user.email} · {user.role}
             {user.phone ? ` · ${user.phone}` : ""}
@@ -110,13 +128,14 @@ function UserRow({ user }: { user: AdminUser }) {
             <span className="min-w-0 flex-1 truncate text-xs text-ink/80">{resetLink}</span>
             <button
               type="button"
-              onClick={() => navigator.clipboard.writeText(resetLink)}
+              onClick={handleCopy}
               aria-label="Copy reset link"
               className="shrink-0 text-ink/40 hover:text-ink"
             >
               <Copy className="h-4 w-4" />
             </button>
           </div>
+          {copied && <p className="text-xs text-status-confirmed">Reset link copied.</p>}
           <a
             href={`https://wa.me/?text=${encodeURIComponent(whatsappMessage)}`}
             target="_blank"
@@ -130,21 +149,24 @@ function UserRow({ user }: { user: AdminUser }) {
           </Button>
         </div>
       ) : (
-        <div className="mt-3 flex gap-2 border-t border-border pt-3">
+        <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
           {user.status !== "WAITING_FOR_ACTIVATION" && (
             <Button size="sm" variant="secondary" loading={busy === "reset"} onClick={handleReset}>
               Reset password
             </Button>
           )}
-          <Button
-            size="sm"
-            variant={user.status === "ACTIVE" ? "danger" : "primary"}
-            icon={<Power className="h-3.5 w-3.5" />}
-            loading={busy === "status"}
-            onClick={handleToggleStatus}
-          >
-            {user.status === "ACTIVE" ? "Disable" : "Enable"}
-          </Button>
+          {!isSelf && user.status !== "WAITING_FOR_ACTIVATION" && (
+            <Button
+              size="sm"
+              variant={user.status === "ACTIVE" ? "danger" : "primary"}
+              icon={<Power className="h-3.5 w-3.5" />}
+              loading={busy === "status"}
+              onClick={handleToggleStatus}
+            >
+              {user.status === "ACTIVE" ? "Disable" : "Enable"}
+            </Button>
+          )}
+          {isSelf && <span className="self-center text-xs text-ink/50">Your own account can't be disabled here.</span>}
         </div>
       )}
     </Card>
