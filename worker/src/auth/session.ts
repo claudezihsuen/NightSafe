@@ -1,7 +1,8 @@
 import type { Env } from "../types";
 
 const SESSION_COOKIE = "ns_session";
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14; // 14 days
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14; // server-side validity for normal sessions
+const REMEMBERED_SESSION_TTL_SECONDS = 60 * 60 * 24 * 365; // remembered trusted device
 
 function toHex(buffer: ArrayBuffer): string {
   return [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -20,7 +21,7 @@ export async function hashToken(token: string): Promise<string> {
 }
 
 interface CookieOptions {
-  maxAgeSeconds?: number; // omit (or 0) to expire the cookie immediately
+  maxAgeSeconds?: number;
   secure: boolean;
   sameSite: "Lax";
 }
@@ -31,21 +32,26 @@ function buildCookie(value: string, { maxAgeSeconds, secure, sameSite }: CookieO
     "Path=/",
     "HttpOnly",
     `SameSite=${sameSite}`,
-    `Max-Age=${maxAgeSeconds ?? 0}`,
   ];
+  if (maxAgeSeconds !== undefined) parts.push(`Max-Age=${maxAgeSeconds}`);
   if (secure) parts.push("Secure");
   return parts.join("; ");
 }
 
 function cookieOptions(env: Env): Pick<CookieOptions, "secure" | "sameSite"> {
-  // Hosted browsers now use the Cloudflare Pages /api/* same-origin proxy,
-  // so production/staging sessions can use first-party SameSite=Lax cookies.
-  // Secure stays disabled only for local HTTP development.
   return { secure: env.ENVIRONMENT !== "development", sameSite: "Lax" };
 }
 
-export function sessionCookieHeader(token: string, env: Env): string {
-  return buildCookie(token, { maxAgeSeconds: SESSION_TTL_SECONDS, ...cookieOptions(env) });
+/**
+ * Without Remember me the cookie is a browser-session cookie. With Remember me
+ * it persists on this device for up to a year. NightSafe never stores the raw
+ * password in localStorage or any JS-readable browser storage.
+ */
+export function sessionCookieHeader(token: string, env: Env, rememberMe = false): string {
+  return buildCookie(token, {
+    maxAgeSeconds: rememberMe ? REMEMBERED_SESSION_TTL_SECONDS : undefined,
+    ...cookieOptions(env),
+  });
 }
 
 export function clearedSessionCookieHeader(env: Env): string {
@@ -63,6 +69,7 @@ export function readSessionToken(request: Request): string | null {
   return null;
 }
 
-export function sessionExpiryIso(): string {
-  return new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString();
+export function sessionExpiryIso(rememberMe = false): string {
+  const ttl = rememberMe ? REMEMBERED_SESSION_TTL_SECONDS : SESSION_TTL_SECONDS;
+  return new Date(Date.now() + ttl * 1000).toISOString();
 }

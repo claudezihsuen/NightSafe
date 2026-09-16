@@ -6,16 +6,27 @@
   html,
   body,
   #root {
-    height: 100%;
+    min-height: 100%;
   }
 
   body {
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 8% 0%, rgba(226, 210, 184, 0.28), transparent 34rem),
+      radial-gradient(circle at 100% 12%, rgba(200, 210, 184, 0.24), transparent 30rem),
+      theme("colors.canvas");
+    color: theme("colors.ink");
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
   :focus-visible {
     outline: 2px solid theme("colors.sage.500");
     outline-offset: 2px;
+  }
+
+  ::selection {
+    background: theme("colors.sage.200");
+    color: theme("colors.midnight.800");
   }
 }
 

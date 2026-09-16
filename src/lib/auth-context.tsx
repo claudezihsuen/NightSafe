@@ -3,10 +3,15 @@ import type { ReactNode } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { AuthUser } from "@/types";
 
+export type LoginResult =
+  | { user: AuthUser; twoFactorRequired?: false }
+  | { twoFactorRequired: true; challenge: string };
+
 interface AuthContextValue {
   user: AuthUser | null;
   status: "loading" | "authenticated" | "unauthenticated";
-  login: (email: string, password: string) => Promise<AuthUser>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<LoginResult>;
+  verifyTwoFactor: (challenge: string, code: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -19,9 +24,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      // The server is the source of truth for who's logged in — the
-      // session lives in an HTTP-only cookie the browser sends
-      // automatically, never in localStorage or a JS-readable token.
+      // The server is the source of truth for who's logged in — the session
+      // lives in an HTTP-only cookie, never in localStorage or a JS-readable token.
       const data = await api.get<{ user: AuthUser | null }>("/api/auth/me");
       setUser(data.user);
       setStatus(data.user ? "authenticated" : "unauthenticated");
@@ -32,11 +36,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const data = await api.post<{ user: AuthUser }>("/api/auth/login", { email, password });
+  const login = useCallback(async (email: string, password: string, rememberMe = false): Promise<LoginResult> => {
+    const data = await api.post<LoginResult>("/api/auth/login", { email, password, rememberMe });
+    if ("user" in data) {
+      setUser(data.user);
+      setStatus("authenticated");
+    }
+    return data;
+  }, []);
+
+  const verifyTwoFactor = useCallback(async (challenge: string, code: string) => {
+    const data = await api.post<{ user: AuthUser }>("/api/auth/2fa", { challenge, code });
     setUser(data.user);
     setStatus("authenticated");
     return data.user;
@@ -53,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, status, login, logout, refresh }}>
+    <AuthContext.Provider value={{ user, status, login, verifyTwoFactor, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );
