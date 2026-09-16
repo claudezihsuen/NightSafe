@@ -94,9 +94,14 @@ export async function login(request: Request, env: Env): Promise<Response> {
   const originError = rejectCrossOriginBrowserMutation(request, env);
   if (originError) return originError;
 
-  const body = await request.json().catch(() => null) as { email?: unknown; password?: unknown } | null;
+  const body = await request.json().catch(() => null) as {
+    email?: unknown;
+    password?: unknown;
+    rememberMe?: unknown;
+  } | null;
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   const password = typeof body?.password === "string" ? body.password : "";
+  const rememberMe = body?.rememberMe === true;
 
   if (!email || !password) {
     return json({ error: "Email and password are required." }, 400);
@@ -133,18 +138,19 @@ export async function login(request: Request, env: Env): Promise<Response> {
     await env.DB.batch([
       env.DB.prepare("DELETE FROM two_factor_login_challenges WHERE user_id = ? OR expires_at < datetime('now')").bind(user.id),
       env.DB.prepare(
-        "INSERT INTO two_factor_login_challenges (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
-      ).bind(challengeHash, user.id, expiresAt),
+        `INSERT INTO two_factor_login_challenges (token_hash, user_id, remember_me, expires_at)
+         VALUES (?, ?, ?, ?)`,
+      ).bind(challengeHash, user.id, rememberMe ? 1 : 0, expiresAt),
     ]);
     return json({ twoFactorRequired: true, challenge });
   }
 
   const token = generateToken();
   const tokenHash = await hashToken(token);
-  await createSession(env, user.id, tokenHash, sessionExpiryIso(), request);
+  await createSession(env, user.id, tokenHash, sessionExpiryIso(rememberMe), request, rememberMe);
 
   return json({ user: await toSessionUser(env, user) }, 200, {
-    "Set-Cookie": sessionCookieHeader(token, env),
+    "Set-Cookie": sessionCookieHeader(token, env, rememberMe),
   });
 }
 
@@ -160,8 +166,8 @@ export async function verifyTwoFactorLogin(request: Request, env: Env): Promise<
 
   const challengeHash = await hashToken(challenge);
   const row = await env.DB.prepare(
-    "SELECT user_id, attempts, expires_at FROM two_factor_login_challenges WHERE token_hash = ?",
-  ).bind(challengeHash).first<{ user_id: string; attempts: number; expires_at: string }>();
+    "SELECT user_id, remember_me, attempts, expires_at FROM two_factor_login_challenges WHERE token_hash = ?",
+  ).bind(challengeHash).first<{ user_id: string; remember_me: number; attempts: number; expires_at: string }>();
 
   if (!row || new Date(row.expires_at).getTime() < Date.now()) {
     if (row) await env.DB.prepare("DELETE FROM two_factor_login_challenges WHERE token_hash = ?").bind(challengeHash).run();
@@ -185,15 +191,14 @@ export async function verifyTwoFactorLogin(request: Request, env: Env): Promise<
     return json({ error: "Authenticator code is incorrect." }, 401);
   }
 
+  const rememberMe = row.remember_me === 1;
   const token = generateToken();
   const tokenHash = await hashToken(token);
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM two_factor_login_challenges WHERE token_hash = ?").bind(challengeHash),
-  ]);
-  await createSession(env, user.id, tokenHash, sessionExpiryIso(), request);
+  await env.DB.prepare("DELETE FROM two_factor_login_challenges WHERE token_hash = ?").bind(challengeHash).run();
+  await createSession(env, user.id, tokenHash, sessionExpiryIso(rememberMe), request, rememberMe);
 
   return json({ user: await toSessionUser(env, user) }, 200, {
-    "Set-Cookie": sessionCookieHeader(token, env),
+    "Set-Cookie": sessionCookieHeader(token, env, rememberMe),
   });
 }
 
@@ -294,10 +299,10 @@ export async function activate(request: Request, env: Env, token: string): Promi
 
   const sessionToken = generateToken();
   const sessionTokenHash = await hashToken(sessionToken);
-  await createSession(env, user.id, sessionTokenHash, sessionExpiryIso(), request);
+  await createSession(env, user.id, sessionTokenHash, sessionExpiryIso(), request, false);
 
   return json({ user: await toSessionUser(env, user), signedIn: true }, 200, {
-    "Set-Cookie": sessionCookieHeader(sessionToken, env),
+    "Set-Cookie": sessionCookieHeader(sessionToken, env, false),
   });
 }
 
