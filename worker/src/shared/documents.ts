@@ -7,6 +7,53 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
+const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+const ALLOWED_DOCUMENT_TYPES = new Set(["application/pdf", "image/png", "image/jpeg"]);
+
+function canonicalDocumentType(bytes: Uint8Array): "application/pdf" | "image/png" | "image/jpeg" | null {
+  if (
+    bytes.length >= 5 &&
+    bytes[0] === 0x25 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x44 &&
+    bytes[3] === 0x46 &&
+    bytes[4] === 0x2d
+  ) {
+    return "application/pdf";
+  }
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  return null;
+}
+
+function extensionForType(type: string): string {
+  if (type === "application/pdf") return "pdf";
+  if (type === "image/png") return "png";
+  return "jpg";
+}
+
+function contentDisposition(fileName: string): string {
+  const fallback = fileName.replace(/[\r\n"\\]/g, "_").replace(/[^\x20-\x7E]/g, "_") || "document";
+  const encoded = encodeURIComponent(fileName).replace(/['()*]/g, (char) =>
+    `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
 export interface DocumentRow {
   id: string;
   tenant_id: string;
@@ -19,14 +66,16 @@ export interface DocumentRow {
 
 export type LeaseScopeCheck = (env: Env, actor: SessionUser, leaseId: string) => Promise<boolean>;
 
-export async function streamDocument(env: Env, fileKey: string): Promise<Response> {
+export async function streamDocument(env: Env, fileKey: string, fileName = "document"): Promise<Response> {
   const object = await env.FILES.get(fileKey);
   if (!object) return new Response("Not found.", { status: 404 });
 
   return new Response(object.body, {
     headers: {
       "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
-      "Cache-Control": "private, max-age=0",
+      "Content-Disposition": contentDisposition(fileName),
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, no-store",
     },
   });
 }
@@ -74,11 +123,23 @@ export function createDocumentRoutes(verifyLease: LeaseScopeCheck) {
       if (!(file instanceof File) || file.size === 0) {
         return json({ error: "A file is required." }, 400);
       }
+      if (file.size > MAX_DOCUMENT_BYTES) {
+        return json({ error: "File must be 10MB or smaller." }, 413);
+      }
+      if (!ALLOWED_DOCUMENT_TYPES.has(file.type)) {
+        return json({ error: "Only PDF, PNG, and JPG files are allowed." }, 415);
+      }
+
+      const buffer = await file.arrayBuffer();
+      const verifiedType = canonicalDocumentType(new Uint8Array(buffer));
+      if (!verifiedType || verifiedType !== file.type) {
+        return json({ error: "The uploaded file content does not match its file type." }, 415);
+      }
 
       const id = crypto.randomUUID();
-      const fileKey = `agreements/${tenantId}/${Date.now()}-${file.name}`;
-      await env.FILES.put(fileKey, await file.arrayBuffer(), {
-        httpMetadata: { contentType: file.type || "application/octet-stream" },
+      const fileKey = `agreements/${tenantId}/${id}.${extensionForType(verifiedType)}`;
+      await env.FILES.put(fileKey, buffer, {
+        httpMetadata: { contentType: verifiedType },
       });
 
       const auditLogId = crypto.randomUUID();
@@ -96,13 +157,13 @@ export function createDocumentRoutes(verifyLease: LeaseScopeCheck) {
       return json({ id, fileName: file.name }, 201);
     },
 
-    /** GET :id/download — streams the file, scope-verified via its lease. */
+    /** GET :id/download — streams the file as an attachment, scope-verified via its lease. */
     async download(env: Env, actor: SessionUser, documentId: string): Promise<Response> {
       const doc = await getDocumentById(env, documentId);
       if (!doc || !doc.lease_id || !(await verifyLease(env, actor, doc.lease_id))) {
         return new Response("Not found.", { status: 404 });
       }
-      return streamDocument(env, doc.file_key);
+      return streamDocument(env, doc.file_key, doc.file_name);
     },
 
     /** DELETE :id — removes the D1 row and the R2 object. No soft-delete/versioning exists yet, so this is permanent. */
