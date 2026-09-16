@@ -1,6 +1,7 @@
 import type { Env, Role, SessionUser } from "../types";
 import { getUserByEmail, getUserById, createSession, deleteSession, toSessionUser } from "../db";
 import { isAllowedBrowserOrigin } from "../cors";
+import { verifyTotp } from "../account/totp";
 import { hashPassword, verifyPassword } from "./hash";
 import {
   generateToken,
@@ -29,6 +30,7 @@ const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_BLOCK_MS = 15 * 60 * 1000;
 const MAX_FAILED_LOGINS = 8;
 const LOGIN_RATE_ROW_TTL_MS = 2 * 24 * 60 * 60 * 1000;
+const TWO_FACTOR_CHALLENGE_MS = 5 * 60 * 1000;
 
 interface LoginRateRow {
   attempts: number;
@@ -61,8 +63,7 @@ async function recordFailedLogin(env: Env, keyHash: string): Promise<void> {
     .bind(keyHash)
     .first<LoginRateRow>();
 
-  const stillInWindow =
-    existing && new Date(existing.window_started_at).getTime() >= windowCutoffMs;
+  const stillInWindow = existing && new Date(existing.window_started_at).getTime() >= windowCutoffMs;
   const attempts = stillInWindow ? existing.attempts + 1 : 1;
   const windowStartedAt = stillInWindow ? existing.window_started_at : now;
   const blockedUntil = attempts >= MAX_FAILED_LOGINS
@@ -93,7 +94,7 @@ export async function login(request: Request, env: Env): Promise<Response> {
   const originError = rejectCrossOriginBrowserMutation(request, env);
   if (originError) return originError;
 
-  const body = await request.json().catch(() => null);
+  const body = await request.json().catch(() => null) as { email?: unknown; password?: unknown } | null;
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   const password = typeof body?.password === "string" ? body.password : "";
 
@@ -125,9 +126,71 @@ export async function login(request: Request, env: Env): Promise<Response> {
 
   await clearFailedLogins(env, rateKey);
 
+  if (user.two_factor_enabled_at && user.two_factor_secret) {
+    const challenge = generateToken();
+    const challengeHash = await hashToken(challenge);
+    const expiresAt = new Date(Date.now() + TWO_FACTOR_CHALLENGE_MS).toISOString();
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM two_factor_login_challenges WHERE user_id = ? OR expires_at < datetime('now')").bind(user.id),
+      env.DB.prepare(
+        "INSERT INTO two_factor_login_challenges (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+      ).bind(challengeHash, user.id, expiresAt),
+    ]);
+    return json({ twoFactorRequired: true, challenge });
+  }
+
   const token = generateToken();
   const tokenHash = await hashToken(token);
-  await createSession(env, user.id, tokenHash, sessionExpiryIso());
+  await createSession(env, user.id, tokenHash, sessionExpiryIso(), request);
+
+  return json({ user: await toSessionUser(env, user) }, 200, {
+    "Set-Cookie": sessionCookieHeader(token, env),
+  });
+}
+
+/** POST /api/auth/2fa — completes a password-authenticated TOTP challenge. */
+export async function verifyTwoFactorLogin(request: Request, env: Env): Promise<Response> {
+  const originError = rejectCrossOriginBrowserMutation(request, env);
+  if (originError) return originError;
+
+  const body = await request.json().catch(() => null) as { challenge?: unknown; code?: unknown } | null;
+  const challenge = typeof body?.challenge === "string" ? body.challenge : "";
+  const code = typeof body?.code === "string" ? body.code.trim() : "";
+  if (!challenge || !/^\d{6}$/.test(code)) return json({ error: "Enter the 6-digit authenticator code." }, 400);
+
+  const challengeHash = await hashToken(challenge);
+  const row = await env.DB.prepare(
+    "SELECT user_id, attempts, expires_at FROM two_factor_login_challenges WHERE token_hash = ?",
+  ).bind(challengeHash).first<{ user_id: string; attempts: number; expires_at: string }>();
+
+  if (!row || new Date(row.expires_at).getTime() < Date.now()) {
+    if (row) await env.DB.prepare("DELETE FROM two_factor_login_challenges WHERE token_hash = ?").bind(challengeHash).run();
+    return json({ error: "This sign-in verification has expired. Sign in again." }, 410);
+  }
+  if (row.attempts >= 8) {
+    await env.DB.prepare("DELETE FROM two_factor_login_challenges WHERE token_hash = ?").bind(challengeHash).run();
+    return json({ error: "Too many incorrect authenticator codes. Sign in again." }, 429);
+  }
+
+  const user = await getUserById(env, row.user_id);
+  if (!user || user.status !== "ACTIVE" || !user.two_factor_secret || !user.two_factor_enabled_at) {
+    await env.DB.prepare("DELETE FROM two_factor_login_challenges WHERE token_hash = ?").bind(challengeHash).run();
+    return json({ error: "This sign-in verification is no longer valid." }, 410);
+  }
+
+  if (!(await verifyTotp(user.two_factor_secret, code))) {
+    await env.DB.prepare(
+      "UPDATE two_factor_login_challenges SET attempts = attempts + 1 WHERE token_hash = ?",
+    ).bind(challengeHash).run();
+    return json({ error: "Authenticator code is incorrect." }, 401);
+  }
+
+  const token = generateToken();
+  const tokenHash = await hashToken(token);
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM two_factor_login_challenges WHERE token_hash = ?").bind(challengeHash),
+  ]);
+  await createSession(env, user.id, tokenHash, sessionExpiryIso(), request);
 
   return json({ user: await toSessionUser(env, user) }, 200, {
     "Set-Cookie": sessionCookieHeader(token, env),
@@ -185,7 +248,7 @@ export async function activate(request: Request, env: Env, token: string): Promi
   const originError = rejectCrossOriginBrowserMutation(request, env);
   if (originError) return originError;
 
-  const body = await request.json().catch(() => null);
+  const body = await request.json().catch(() => null) as { password?: unknown } | null;
   const password = typeof body?.password === "string" ? body.password : "";
 
   if (password.length < 8) {
@@ -212,21 +275,15 @@ export async function activate(request: Request, env: Env, token: string): Promi
   const nextStatus = existingUser.status === "WAITING_FOR_ACTIVATION" ? "ACTIVE" : existingUser.status;
 
   await env.DB.batch([
-    env.DB.prepare("UPDATE users SET password_hash = ?, status = ? WHERE id = ?").bind(
-      passwordHash,
-      nextStatus,
-      invite.user_id,
-    ),
-    env.DB.prepare("UPDATE invitations SET used_at = datetime('now') WHERE token_hash = ?").bind(
-      tokenHash,
-    ),
+    env.DB.prepare(
+      "UPDATE users SET password_hash = ?, status = ?, email_verified_at = COALESCE(email_verified_at, datetime('now')) WHERE id = ?",
+    ).bind(passwordHash, nextStatus, invite.user_id),
+    env.DB.prepare("UPDATE invitations SET used_at = datetime('now') WHERE token_hash = ?").bind(tokenHash),
   ]);
 
   const user = await getUserById(env, invite.user_id);
   if (!user) return json({ error: "Something went wrong." }, 500);
 
-  // Disabled accounts may reset their password, but they remain disabled and
-  // are not given a usable session until an admin enables them again.
   if (user.status !== "ACTIVE") {
     return json(
       { user: await toSessionUser(env, user), signedIn: false },
@@ -237,7 +294,7 @@ export async function activate(request: Request, env: Env, token: string): Promi
 
   const sessionToken = generateToken();
   const sessionTokenHash = await hashToken(sessionToken);
-  await createSession(env, user.id, sessionTokenHash, sessionExpiryIso());
+  await createSession(env, user.id, sessionTokenHash, sessionExpiryIso(), request);
 
   return json({ user: await toSessionUser(env, user), signedIn: true }, 200, {
     "Set-Cookie": sessionCookieHeader(sessionToken, env),
