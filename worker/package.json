@@ -13,6 +13,7 @@
     "db:migrate:staging:remote": "wrangler d1 migrations apply nightsafe-staging-db --env staging --remote",
     "typecheck": "tsc --noEmit",
     "bundle:check": "wrangler deploy --dry-run --outdir /tmp/nightsafe-worker-dist",
+    "bundle:check:staging": "wrangler deploy --env staging --dry-run --outdir /tmp/nightsafe-staging-worker-dist",
     "test:invariants": "node scripts/test-invariants.mjs"
   },
   "devDependencies": {
