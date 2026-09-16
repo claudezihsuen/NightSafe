@@ -1,4 +1,5 @@
 import type { Env, SessionUser, Role } from "../types";
+import { streamPrivateAttachment } from "./file-security";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -37,24 +38,29 @@ export async function confirmPaymentCore(
   }
 
   const now = new Date().toISOString();
-  const auditLogId = crypto.randomUUID();
+  const update = await env.DB.prepare(
+    `UPDATE rent_payments
+     SET status = 'PAYMENT_CONFIRMED', payment_date = ?, reviewed_by = ?, reviewed_at = ?, reviewer_role = ?
+     WHERE id = ? AND status = 'PENDING_REVIEW'`,
+  )
+    .bind(now, actor.id, now, reviewerRole, payment.id)
+    .run();
 
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE rent_payments
-       SET status = 'PAYMENT_CONFIRMED', payment_date = ?, reviewed_by = ?, reviewed_at = ?, reviewer_role = ?
-       WHERE id = ?`,
-    ).bind(now, actor.id, now, reviewerRole, payment.id),
-    env.DB.prepare(
-      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
-       VALUES (?, ?, 'RENT_PAYMENT_CONFIRMED', 'rent_payment', ?, ?)`,
-    ).bind(
-      auditLogId,
+  if ((update.meta.changes ?? 0) !== 1) {
+    return json({ error: "This payment was already reviewed. Refresh and try again." }, 409);
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+     VALUES (?, ?, 'RENT_PAYMENT_CONFIRMED', 'rent_payment', ?, ?)`,
+  )
+    .bind(
+      crypto.randomUUID(),
       actor.id,
       payment.id,
       JSON.stringify({ tenantId: payment.tenant_id, leaseId: payment.lease_id, month: payment.month, reviewerRole }),
-    ),
-  ]);
+    )
+    .run();
 
   return json({
     payment: {
@@ -85,22 +91,27 @@ export async function rejectPaymentCore(
 
   const body = await request.json().catch(() => null);
   const reason = typeof body?.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
-
   const now = new Date().toISOString();
-  const auditLogId = crypto.randomUUID();
 
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE rent_payments
-       SET status = 'WAITING_PAYMENT', receipt_key = NULL, submitted_at = NULL,
-           reviewed_by = ?, reviewed_at = ?, reviewer_role = ?
-       WHERE id = ?`,
-    ).bind(actor.id, now, reviewerRole, payment.id),
-    env.DB.prepare(
-      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
-       VALUES (?, ?, 'RENT_PAYMENT_REJECTED', 'rent_payment', ?, ?)`,
-    ).bind(
-      auditLogId,
+  const update = await env.DB.prepare(
+    `UPDATE rent_payments
+     SET status = 'WAITING_PAYMENT', receipt_key = NULL, submitted_at = NULL,
+         reviewed_by = ?, reviewed_at = ?, reviewer_role = ?
+     WHERE id = ? AND status = 'PENDING_REVIEW'`,
+  )
+    .bind(actor.id, now, reviewerRole, payment.id)
+    .run();
+
+  if ((update.meta.changes ?? 0) !== 1) {
+    return json({ error: "This payment was already reviewed. Refresh and try again." }, 409);
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, metadata)
+     VALUES (?, ?, 'RENT_PAYMENT_REJECTED', 'rent_payment', ?, ?)`,
+  )
+    .bind(
+      crypto.randomUUID(),
       actor.id,
       payment.id,
       JSON.stringify({
@@ -110,8 +121,12 @@ export async function rejectPaymentCore(
         reviewerRole,
         reason,
       }),
-    ),
-  ]);
+    )
+    .run();
+
+  if (payment.receipt_key) {
+    await env.FILES.delete(payment.receipt_key).catch(() => undefined);
+  }
 
   return json({
     payment: {
@@ -127,15 +142,6 @@ export async function rejectPaymentCore(
 }
 
 /** GET receipt bytes for a payment already verified as in-scope by the caller. */
-export async function streamReceipt(env: Env, payment: { receipt_key: string | null }): Promise<Response> {
-  if (!payment.receipt_key) return new Response("Not found.", { status: 404 });
-  const object = await env.FILES.get(payment.receipt_key);
-  if (!object) return new Response("Not found.", { status: 404 });
-
-  return new Response(object.body, {
-    headers: {
-      "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
-      "Cache-Control": "private, max-age=0",
-    },
-  });
+export async function streamReceipt(env: Env, payment: { receipt_key: string | null; month?: string }): Promise<Response> {
+  return streamPrivateAttachment(env, payment.receipt_key, payment.month ? `rent-receipt-${payment.month}` : "rent-receipt");
 }
