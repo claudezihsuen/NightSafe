@@ -1,6 +1,7 @@
 // One-time production bootstrap for NightSafe's primary administrator.
 // No password is accepted or stored here. The script creates a
-// WAITING_FOR_ACTIVATION SUPER_ADMIN plus a 7-day activation token.
+// WAITING_FOR_ACTIVATION ADMIN plus a Primary Admin marker and 7-day token.
+// The Worker exposes the marked account to the frontend as SUPER_ADMIN.
 //
 // Example:
 //   node scripts/bootstrap-super-admin.mjs \
@@ -40,8 +41,9 @@ const tokenHash = createHash("sha256").update(token).digest("hex");
 const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
 console.log(
-  `INSERT INTO users (id, email, name, role, status) VALUES (${sqlString(userId)}, ${sqlString(email)}, ${sqlString(name)}, 'SUPER_ADMIN', 'WAITING_FOR_ACTIVATION');`,
+  `INSERT INTO users (id, email, name, role, status) VALUES (${sqlString(userId)}, ${sqlString(email)}, ${sqlString(name)}, 'ADMIN', 'WAITING_FOR_ACTIVATION');`,
 );
+console.log(`INSERT INTO primary_admins (user_id) VALUES (${sqlString(userId)});`);
 console.log(
   `INSERT INTO invitations (token_hash, user_id, expires_at) VALUES (${sqlString(tokenHash)}, ${sqlString(userId)}, ${sqlString(expiresAt)});`,
 );
