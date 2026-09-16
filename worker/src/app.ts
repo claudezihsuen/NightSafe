@@ -5,6 +5,8 @@ import { resolveSession } from "./middleware/requireAuth";
 import { handleDocumentationRoute } from "./documentation/routes";
 import { handlePlatformRoute, runScheduledMaintenance } from "./platform/routes";
 import { handleNotificationRoute } from "./platform/notification-routes";
+import { handleAccountRoute } from "./account/routes";
+import { verifyTwoFactorLogin } from "./auth/routes";
 import { processFileDeletionQueue } from "./storage/file-deletion";
 
 function json(data: unknown, status = 200): Response {
@@ -13,6 +15,8 @@ function json(data: unknown, status = 200): Response {
 
 function isFeaturePath(path: string): boolean {
   return (
+    path === "/api/auth/2fa" ||
+    path.startsWith("/api/account/") ||
     path.includes("/documentation") ||
     path.includes("/documents/") ||
     path.endsWith("/dashboard") ||
@@ -33,8 +37,20 @@ export default {
     }
 
     try {
+      if (path === "/api/auth/2fa") {
+        if (request.method !== "POST") {
+          return withCors(json({ error: "Not found." }, 404), request, env);
+        }
+        return withCors(await verifyTwoFactorLogin(request, env), request, env);
+      }
+
       const actor = await resolveSession(request, env);
       if (!actor) return withCors(json({ error: "Not authorized." }, 401), request, env);
+
+      if (path.startsWith("/api/account/")) {
+        const account = await handleAccountRoute(request, env, actor);
+        return withCors(account ?? json({ error: "Not found." }, 404), request, env);
+      }
 
       const documentation = await handleDocumentationRoute(request, env, actor);
       if (documentation) return withCors(documentation, request, env);
