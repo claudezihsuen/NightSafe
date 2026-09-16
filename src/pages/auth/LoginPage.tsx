@@ -9,6 +9,7 @@ import { useAuth, ApiError } from "@/lib/auth-context";
 import type { Role } from "@/types";
 
 const ROLE_HOME: Record<Role, string> = {
+  SUPER_ADMIN: "/admin",
   ADMIN: "/admin",
   OWNER: "/owner",
   AGENT: "/agent",

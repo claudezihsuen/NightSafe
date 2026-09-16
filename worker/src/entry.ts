@@ -2,7 +2,7 @@ import coreWorker from "./index";
 import type { Env } from "./types";
 import { withCors } from "./cors";
 import { resolveSession, requireRole } from "./middleware/requireAuth";
-import { initiatePasswordReset, listUsers, setUserStatus } from "./admin/routes";
+import { createAdminAccount, initiatePasswordReset, listUsers, setUserStatus } from "./admin/routes";
 
 const ADMIN_RESET_PASSWORD = /^\/api\/admin\/users\/([^/]+)\/reset-password$/;
 const ADMIN_USER_STATUS = /^\/api\/admin\/users\/([^/]+)\/status$/;
@@ -34,10 +34,12 @@ export default {
 
     try {
       const sessionUser = await resolveSession(request, env);
-      if (!requireRole(sessionUser, ["ADMIN"])) {
+      if (!requireRole(sessionUser, ["SUPER_ADMIN", "ADMIN"])) {
         response = json({ error: "Not authorized." }, 403);
       } else if (pathname === "/api/admin/users" && request.method === "GET") {
         response = await listUsers(env);
+      } else if (pathname === "/api/admin/admins" && request.method === "POST") {
+        response = await createAdminAccount(request, env, sessionUser!);
       } else if (ADMIN_RESET_PASSWORD.test(pathname) && request.method === "POST") {
         const [, userId] = pathname.match(ADMIN_RESET_PASSWORD)!;
         response = await initiatePasswordReset(env, sessionUser!, userId);

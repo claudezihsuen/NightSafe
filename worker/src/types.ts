@@ -1,4 +1,4 @@
-export type Role = "ADMIN" | "OWNER" | "AGENT" | "UNIT_LEADER" | "TENANT";
+export type Role = "SUPER_ADMIN" | "ADMIN" | "OWNER" | "AGENT" | "UNIT_LEADER" | "TENANT";
 
 export interface Env {
   DB: D1Database;

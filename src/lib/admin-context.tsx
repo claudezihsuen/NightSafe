@@ -1,13 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { api, ApiError } from "@/lib/api";
+import type { Role } from "@/types";
 
 export interface AdminUser {
   id: string;
   email: string;
   name: string;
   phone: string | null;
-  role: string;
+  role: Role;
   status: "ACTIVE" | "WAITING_FOR_ACTIVATION" | "INACTIVE";
   createdAt: string;
 }
@@ -17,9 +18,15 @@ interface ApiAdminUser {
   email: string;
   name: string;
   phone: string | null;
-  role: string;
+  role: Role;
   status: AdminUser["status"];
   created_at: string;
+}
+
+interface CreateAdminResponse {
+  user: Omit<ApiAdminUser, "created_at">;
+  activationLink: string;
+  expiresAt: string;
 }
 
 function fromApi(u: ApiAdminUser): AdminUser {
@@ -39,6 +46,7 @@ interface AdminContextValue {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  createAdmin: (input: { name: string; email: string; phone?: string }) => Promise<{ activationLink: string; expiresAt: string }>;
   resetPassword: (userId: string) => Promise<{ resetLink: string; expiresAt: string }>;
   setStatus: (userId: string, status: "ACTIVE" | "INACTIVE") => Promise<void>;
 }
@@ -67,6 +75,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     refresh();
   }, [refresh]);
 
+  const createAdmin = async (input: { name: string; email: string; phone?: string }) => {
+    const result = await api.post<CreateAdminResponse>("/api/admin/admins", input);
+    await refresh();
+    return { activationLink: result.activationLink, expiresAt: result.expiresAt };
+  };
+
   const resetPassword = async (userId: string) => {
     return api.post<{ resetLink: string; expiresAt: string }>(`/api/admin/users/${userId}/reset-password`);
   };
@@ -77,7 +91,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AdminContext.Provider value={{ users, loading, error, refresh, resetPassword, setStatus }}>
+    <AdminContext.Provider value={{ users, loading, error, refresh, createAdmin, resetPassword, setStatus }}>
       {children}
     </AdminContext.Provider>
   );
