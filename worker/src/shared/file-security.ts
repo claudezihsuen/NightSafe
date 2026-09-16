@@ -27,9 +27,7 @@ function detectType(bytes: Uint8Array): AllowedUploadType | null {
     bytes[2] === 0x44 &&
     bytes[3] === 0x46 &&
     bytes[4] === 0x2d
-  ) {
-    return "application/pdf";
-  }
+  ) return "application/pdf";
 
   if (
     bytes.length >= 8 &&
@@ -41,14 +39,11 @@ function detectType(bytes: Uint8Array): AllowedUploadType | null {
     bytes[5] === 0x0a &&
     bytes[6] === 0x1a &&
     bytes[7] === 0x0a
-  ) {
-    return "image/png";
-  }
+  ) return "image/png";
 
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     return "image/jpeg";
   }
-
   return null;
 }
 
@@ -58,12 +53,11 @@ function extensionForType(type: AllowedUploadType): ValidatedUpload["extension"]
   return "jpg";
 }
 
-export async function validateUploadedFile(file: File): Promise<UploadValidationResult> {
-  if (file.size <= 0) {
-    return { ok: false, error: "The file is empty.", status: 400 };
-  }
-  if (file.size > MAX_UPLOAD_BYTES) {
-    return { ok: false, error: "File must be 10MB or smaller.", status: 413 };
+export async function validateUploadedFile(file: File, maxBytes = MAX_UPLOAD_BYTES): Promise<UploadValidationResult> {
+  if (file.size <= 0) return { ok: false, error: "The file is empty.", status: 400 };
+  if (file.size > maxBytes) {
+    const mb = Math.max(1, Math.round(maxBytes / (1024 * 1024)));
+    return { ok: false, error: `File must be ${mb}MB or smaller.`, status: 413 };
   }
   if (!ALLOWED_TYPES.has(file.type as AllowedUploadType)) {
     return { ok: false, error: "Only PDF, PNG, and JPG files are allowed.", status: 415 };
@@ -72,37 +66,61 @@ export async function validateUploadedFile(file: File): Promise<UploadValidation
   const buffer = await file.arrayBuffer();
   const detected = detectType(new Uint8Array(buffer));
   if (!detected || detected !== file.type) {
-    return {
-      ok: false,
-      error: "The uploaded file content does not match its file type.",
-      status: 415,
-    };
+    return { ok: false, error: "The uploaded file content does not match its file type.", status: 415 };
   }
 
-  return {
-    ok: true,
-    upload: { buffer, contentType: detected, extension: extensionForType(detected) },
-  };
+  return { ok: true, upload: { buffer, contentType: detected, extension: extensionForType(detected) } };
 }
 
-export async function putValidatedFile(env: Env, prefix: string, file: File): Promise<StoredUploadResult> {
-  const result = await validateUploadedFile(file);
+export async function putValidatedFile(
+  env: Env,
+  prefix: string,
+  file: File,
+  maxBytes = MAX_UPLOAD_BYTES,
+): Promise<StoredUploadResult> {
+  const result = await validateUploadedFile(file, maxBytes);
   if (!result.ok) return result;
 
   const fileKey = `${prefix.replace(/\/+$/, "")}/${crypto.randomUUID()}.${result.upload.extension}`;
   await env.FILES.put(fileKey, result.upload.buffer, {
     httpMetadata: { contentType: result.upload.contentType },
   });
-
   return { ok: true, upload: result.upload, fileKey };
 }
 
-function contentDisposition(fileName: string): string {
-  const fallback = fileName.replace(/[\r\n"\\]/g, "_").replace(/[^\x20-\x7E]/g, "_") || "document";
-  const encoded = encodeURIComponent(fileName).replace(/['()*]/g, (char) =>
-    `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
-  );
-  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+function safeFileName(fileName: string): { fallback: string; encoded: string } {
+  return {
+    fallback: fileName.replace(/[\r\n"\\]/g, "_").replace(/[^\x20-\x7E]/g, "_") || "document",
+    encoded: encodeURIComponent(fileName).replace(/['()*]/g, (char) =>
+      `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+    ),
+  };
+}
+
+function disposition(fileName: string, mode: "attachment" | "inline"): string {
+  const { fallback, encoded } = safeFileName(fileName);
+  return `${mode}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
+async function streamPrivateObject(
+  env: Env,
+  fileKey: string | null,
+  fileName: string,
+  mode: "attachment" | "inline",
+): Promise<Response> {
+  if (!fileKey) return new Response("Not found.", { status: 404 });
+  const object = await env.FILES.get(fileKey);
+  if (!object) return new Response("Not found.", { status: 404 });
+
+  return new Response(object.body, {
+    headers: {
+      "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
+      "Content-Disposition": disposition(fileName, mode),
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, no-store",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+    },
+  });
 }
 
 export async function streamPrivateAttachment(
@@ -110,17 +128,13 @@ export async function streamPrivateAttachment(
   fileKey: string | null,
   fileName = "document",
 ): Promise<Response> {
-  if (!fileKey) return new Response("Not found.", { status: 404 });
+  return streamPrivateObject(env, fileKey, fileName, "attachment");
+}
 
-  const object = await env.FILES.get(fileKey);
-  if (!object) return new Response("Not found.", { status: 404 });
-
-  return new Response(object.body, {
-    headers: {
-      "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
-      "Content-Disposition": contentDisposition(fileName),
-      "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "private, no-store",
-    },
-  });
+export async function streamPrivateInline(
+  env: Env,
+  fileKey: string | null,
+  fileName = "document",
+): Promise<Response> {
+  return streamPrivateObject(env, fileKey, fileName, "inline");
 }
