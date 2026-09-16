@@ -15,6 +15,10 @@ export type UploadValidationResult =
   | { ok: true; upload: ValidatedUpload }
   | { ok: false; error: string; status: number };
 
+export type StoredUploadResult =
+  | { ok: true; upload: ValidatedUpload; fileKey: string }
+  | { ok: false; error: string; status: number };
+
 function detectType(bytes: Uint8Array): AllowedUploadType | null {
   if (
     bytes.length >= 5 &&
@@ -81,11 +85,7 @@ export async function validateUploadedFile(file: File): Promise<UploadValidation
   };
 }
 
-export async function putValidatedFile(
-  env: Env,
-  prefix: string,
-  file: File,
-): Promise<UploadValidationResult & { fileKey?: string }> {
+export async function putValidatedFile(env: Env, prefix: string, file: File): Promise<StoredUploadResult> {
   const result = await validateUploadedFile(file);
   if (!result.ok) return result;
 
@@ -94,7 +94,7 @@ export async function putValidatedFile(
     httpMetadata: { contentType: result.upload.contentType },
   });
 
-  return { ...result, fileKey };
+  return { ok: true, upload: result.upload, fileKey };
 }
 
 function contentDisposition(fileName: string): string {
