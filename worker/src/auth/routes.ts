@@ -52,7 +52,7 @@ export async function login(request: Request, env: Env): Promise<Response> {
   const tokenHash = await hashToken(token);
   await createSession(env, user.id, tokenHash, sessionExpiryIso());
 
-  return json({ user: toSessionUser(user) }, 200, {
+  return json({ user: await toSessionUser(env, user) }, 200, {
     "Set-Cookie": sessionCookieHeader(token, env),
   });
 }
@@ -152,7 +152,7 @@ export async function activate(request: Request, env: Env, token: string): Promi
   // are not given a usable session until an admin enables them again.
   if (user.status !== "ACTIVE") {
     return json(
-      { user: toSessionUser(user), signedIn: false },
+      { user: await toSessionUser(env, user), signedIn: false },
       200,
       { "Set-Cookie": clearedSessionCookieHeader(env) },
     );
@@ -162,7 +162,7 @@ export async function activate(request: Request, env: Env, token: string): Promi
   const sessionTokenHash = await hashToken(sessionToken);
   await createSession(env, user.id, sessionTokenHash, sessionExpiryIso());
 
-  return json({ user: toSessionUser(user), signedIn: true }, 200, {
+  return json({ user: await toSessionUser(env, user), signedIn: true }, 200, {
     "Set-Cookie": sessionCookieHeader(sessionToken, env),
   });
 }
