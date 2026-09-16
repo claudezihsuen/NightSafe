@@ -12,30 +12,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
+          package-manager-cache: false
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Build
         run: npm run build
 
   worker:
-    name: Worker typecheck
+    name: Worker typecheck and bundle
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: worker
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
+          package-manager-cache: false
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Typecheck
         run: npm run typecheck
+      - name: Bundle Worker without deploying
+        run: npm run bundle:check
