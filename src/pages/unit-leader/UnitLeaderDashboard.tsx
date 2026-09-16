@@ -1,54 +1,27 @@
+import { useEffect, useState } from "react";
+import { Droplets, Home, Zap } from "lucide-react";
+import { api } from "@/lib/api";
+import { formatCents } from "@/lib/format";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { UnitCard } from "@/components/UnitCard";
 import { PaymentCard } from "@/components/PaymentCard";
+import { StatCard } from "@/components/StatCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Home } from "lucide-react";
-import { useUnitLeader } from "@/lib/unit-leader-context";
-import { formatCents } from "@/lib/format";
 
-function currentMonthValue(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
+interface Utility { id: string; type: string; month: string; amount: number; status: "WAITING_PAYMENT" | "PENDING_REVIEW" | "PAYMENT_CONFIRMED"; submitted_at: string | null }
+interface DashboardData { unit: { id: string; label: string; propertyName: string } | null; water: Utility | null; electricity: Utility | null; pendingUtilityPayments: number }
 
 export function UnitLeaderDashboard() {
-  const { unit, utilities, loading, error } = useUnitLeader();
-  const month = currentMonthValue();
-  const water = utilities.find((u) => u.type === "WATER" && u.month === month);
-  const electricity = utilities.find((u) => u.type === "ELECTRICITY" && u.month === month);
-
-  return (
-    <>
-      <PageHeader title="Dashboard" description="Your assigned unit." />
-
-      {loading && <Skeleton className="mb-4 h-20 w-full" />}
-
-      {!loading && error && <p className="text-sm text-status-overdue">{error}</p>}
-
-      {!loading && !error && !unit && (
-        <EmptyState icon={Home} title="No unit assigned yet" description="Your owner or agent will assign you to a unit." />
-      )}
-
-      {!loading && !error && unit && (
-        <>
-          <UnitCard unitLabel={unit.label} propertyName={unit.property_name} className="mb-4" />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <PaymentCard
-              title="Water"
-              subtitle="This month"
-              amount={water ? formatCents(water.amountCents) : "Not submitted"}
-              status={water?.status ?? "WAITING_PAYMENT"}
-            />
-            <PaymentCard
-              title="Electricity"
-              subtitle="This month"
-              amount={electricity ? formatCents(electricity.amountCents) : "Not submitted"}
-              status={electricity?.status ?? "WAITING_PAYMENT"}
-            />
-          </div>
-        </>
-      )}
-    </>
-  );
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => { api.get<DashboardData>("/api/unit-leader/dashboard").then(setData).catch(() => setData(null)).finally(() => setLoading(false)); }, []);
+  return <>
+    <PageHeader title="Dashboard" description="Your unit's water and electricity at a glance." />
+    {loading ? <Skeleton className="h-36" /> : !data?.unit ? <EmptyState icon={Home} title="No unit assigned yet" description="Your Owner will assign a unit before utility payments can be managed." /> : <>
+      <UnitCard unitLabel={data.unit.label} propertyName={data.unit.propertyName} className="mb-4" />
+      <div className="mb-4 grid gap-3 sm:grid-cols-2"><PaymentCard title="Water" subtitle={data.water?.month ?? "No current record"} amount={data.water ? formatCents(data.water.amount) : "Not submitted"} status={data.water?.status ?? "WAITING_PAYMENT"} /><PaymentCard title="Electricity" subtitle={data.electricity?.month ?? "No current record"} amount={data.electricity ? formatCents(data.electricity.amount) : "Not submitted"} status={data.electricity?.status ?? "WAITING_PAYMENT"} /></div>
+      <div className="grid grid-cols-3 gap-3"><StatCard icon={Home} label="Unit" value={data.unit.label} /><StatCard icon={Droplets} label="Water" value={data.water?.status === "PAYMENT_CONFIRMED" ? "Paid" : "Action"} /><StatCard icon={Zap} label="Pending utilities" value={String(data.pendingUtilityPayments)} /></div>
+    </>}
+  </>;
 }
