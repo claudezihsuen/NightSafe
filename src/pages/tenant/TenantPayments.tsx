@@ -5,10 +5,14 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Wallet } from "lucide-react";
 import { useTenantPayments } from "@/lib/tenant-payments-context";
+import { useAuth } from "@/lib/auth-context";
+import { tenantAppBase } from "@/lib/tenant-route";
 import { formatCents, formatDate, formatMonth } from "@/lib/format";
 
 export function TenantPayments() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const base = tenantAppBase(user?.role);
   const { records, loading, error } = useTenantPayments();
 
   return (
@@ -40,7 +44,7 @@ export function TenantPayments() {
               status={r.status}
               hasReceipt={Boolean(r.receiptKey)}
               onClick={() =>
-                navigate(r.status === "WAITING_PAYMENT" ? `/tenant/payments/${r.id}/pay` : `/tenant/payments/${r.id}`)
+                navigate(r.status === "WAITING_PAYMENT" ? `${base}/payments/${r.id}/pay` : `${base}/payments/${r.id}`)
               }
             />
           ))}
