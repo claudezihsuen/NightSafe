@@ -78,7 +78,7 @@ export function HomeScreenExperienceBanner() {
 
   return (
     <div
-      className="sticky top-0 z-40 -mx-4 mb-5 overflow-hidden border-y border-sage-300/70 bg-midnight-700 shadow-subtle sm:-mx-6 lg:hidden"
+      className="sticky top-0 z-30 -mx-4 mb-5 overflow-hidden border-y border-sage-300/70 bg-midnight-700 shadow-subtle sm:-mx-6 lg:hidden"
       role="status"
       aria-label={HOME_SCREEN_MESSAGE}
       data-i18n-skip
