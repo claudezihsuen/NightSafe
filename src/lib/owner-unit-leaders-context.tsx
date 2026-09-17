@@ -11,6 +11,8 @@ export interface UnitLeaderRecord {
   unitId: string | null;
   unitLabel: string | null;
   propertyName: string | null;
+  candidateUnitId: string | null;
+  isUnitLeader: boolean;
 }
 
 interface ApiUnitLeader {
@@ -25,15 +27,18 @@ interface ApiUnitLeader {
 }
 
 function fromApi(u: ApiUnitLeader): UnitLeaderRecord {
+  const candidate = u.unit_id?.startsWith("candidate:") ? u.unit_id.slice("candidate:".length) : null;
   return {
     id: u.id,
     name: u.name,
     email: u.email,
     phone: u.phone,
     status: u.status,
-    unitId: u.unit_id,
+    unitId: candidate ? null : u.unit_id,
     unitLabel: u.unit_label,
     propertyName: u.property_name,
+    candidateUnitId: candidate,
+    isUnitLeader: Boolean(u.unit_id && !candidate),
   };
 }
 
@@ -42,13 +47,8 @@ interface OwnerUnitLeadersContextValue {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  // Throws ApiError with status 409 if the target unit already has a leader —
-  // its .message already names them; callers offer a "confirm replace" retry.
-  createUnitLeader: (
-    input: { name: string; email: string; phone?: string; unitId: string },
-    confirmReplace?: boolean,
-  ) => Promise<{ inviteLink: string }>;
-  reassignUnitLeader: (leaderId: string, unitId: string, confirmReplace?: boolean) => Promise<void>;
+  assignUnitLeader: (tenantId: string, unitId: string) => Promise<void>;
+  unassignUnitLeader: (tenantId: string) => Promise<void>;
 }
 
 const OwnerUnitLeadersContext = createContext<OwnerUnitLeadersContextValue | null>(null);
@@ -72,26 +72,22 @@ export function OwnerUnitLeadersProvider({ children }: { children: ReactNode }) 
   }, []);
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
 
-  const createUnitLeader: OwnerUnitLeadersContextValue["createUnitLeader"] = async (input, confirmReplace) => {
-    const data = await api.post<{ inviteLink: string }>("/api/owner/unit-leaders", {
-      ...input,
-      confirmReplace: confirmReplace ?? false,
-    });
+  const assignUnitLeader = async (tenantId: string, unitId: string) => {
+    await api.patch(`/api/owner/unit-leaders/${tenantId}/unit`, { unitId });
     await refresh();
-    return data;
   };
 
-  const reassignUnitLeader = async (leaderId: string, unitId: string, confirmReplace?: boolean) => {
-    await api.patch(`/api/owner/unit-leaders/${leaderId}/unit`, { unitId, confirmReplace: confirmReplace ?? false });
+  const unassignUnitLeader = async (tenantId: string) => {
+    await api.patch(`/api/owner/unit-leaders/${tenantId}/unit`, { unitId: null });
     await refresh();
   };
 
   return (
     <OwnerUnitLeadersContext.Provider
-      value={{ unitLeaders, loading, error, refresh, createUnitLeader, reassignUnitLeader }}
+      value={{ unitLeaders, loading, error, refresh, assignUnitLeader, unassignUnitLeader }}
     >
       {children}
     </OwnerUnitLeadersContext.Provider>
