@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { KeyRound, ShieldCheck } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -73,12 +73,12 @@ export function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas px-4 py-8">
       <Card className="w-full max-w-sm border-white/70 bg-card/95 shadow-raised">
-        <div className="mb-6 flex items-center justify-center gap-3">
-          <ShieldCheck className="h-9 w-9 shrink-0 text-midnight-700" strokeWidth={1.8} />
-          <div className="text-left">
-            <h1 className="text-lg font-semibold leading-tight text-ink">NightSafe</h1>
-            <p className="text-xs leading-tight text-ink/50">Properties rest easier</p>
-          </div>
+        <div className="mb-6 flex justify-center">
+          <img
+            src="/brand/nightsafe-lockup.svg"
+            alt="NightSafe — Properties rest easier"
+            className="h-auto w-full max-w-[285px]"
+          />
         </div>
 
         {!challenge ? (
