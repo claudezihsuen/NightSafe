@@ -3,11 +3,17 @@ import { useEffect, useState } from "react";
 type NavigatorWithStandalone = Navigator & { standalone?: boolean };
 
 const HOME_SCREEN_MESSAGE = "提示：请把NightSafe加到主屏幕以得到更好的体验。Add NightSafe to Home Screen to get the best experience.";
+const ANDROID_INSTALL_KEY = "nightsafe-home-screen-installed";
+
+function isAndroidPhone(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android/i.test(navigator.userAgent) && /Mobile/i.test(navigator.userAgent);
+}
 
 function isPhoneDevice(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent;
-  return /iPhone|iPod/i.test(ua) || (/Android/i.test(ua) && /Mobile/i.test(ua));
+  return /iPhone|iPod/i.test(ua) || isAndroidPhone();
 }
 
 function isStandalone(): boolean {
@@ -16,23 +22,52 @@ function isStandalone(): boolean {
     || Boolean((navigator as NavigatorWithStandalone).standalone);
 }
 
+function androidInstallKnown(): boolean {
+  if (!isAndroidPhone() || typeof window === "undefined") return false;
+  try { return window.localStorage.getItem(ANDROID_INSTALL_KEY) === "1"; } catch { return false; }
+}
+
+function rememberAndroidInstall(installed: boolean): void {
+  if (!isAndroidPhone() || typeof window === "undefined") return;
+  try {
+    if (installed) window.localStorage.setItem(ANDROID_INSTALL_KEY, "1");
+    else window.localStorage.removeItem(ANDROID_INSTALL_KEY);
+  } catch {
+    // Storage can be unavailable in private browsing; standalone detection still works.
+  }
+}
+
 export function HomeScreenExperienceBanner() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     const displayMode = window.matchMedia("(display-mode: standalone)");
-    const sync = () => setVisible(isPhoneDevice() && !isStandalone());
+    let installedInBrowser = androidInstallKnown();
+
+    const sync = () => setVisible(isPhoneDevice() && !isStandalone() && !installedInBrowser);
+    const handleInstalled = () => {
+      installedInBrowser = true;
+      rememberAndroidInstall(true);
+      setVisible(false);
+    };
+    const handleInstallable = () => {
+      installedInBrowser = false;
+      rememberAndroidInstall(false);
+      sync();
+    };
 
     sync();
     displayMode.addEventListener("change", sync);
-    window.addEventListener("appinstalled", sync);
+    window.addEventListener("appinstalled", handleInstalled);
+    window.addEventListener("beforeinstallprompt", handleInstallable);
     window.addEventListener("focus", sync);
     window.addEventListener("pageshow", sync);
     document.addEventListener("visibilitychange", sync);
 
     return () => {
       displayMode.removeEventListener("change", sync);
-      window.removeEventListener("appinstalled", sync);
+      window.removeEventListener("appinstalled", handleInstalled);
+      window.removeEventListener("beforeinstallprompt", handleInstallable);
       window.removeEventListener("focus", sync);
       window.removeEventListener("pageshow", sync);
       document.removeEventListener("visibilitychange", sync);
