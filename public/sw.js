@@ -1,5 +1,13 @@
-const CACHE = "nightsafe-shell-v2";
-const SHELL = ["/", "/offline.html", "/manifest.webmanifest", "/favicon.svg"];
+const CACHE = "nightsafe-shell-v3";
+const SHELL = [
+  "/",
+  "/offline.html",
+  "/manifest.webmanifest",
+  "/favicon.svg",
+  "/brand/nightsafe-lockup.svg",
+  "/icons/nightsafe-ios.svg",
+  "/icons/nightsafe-android.svg",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
