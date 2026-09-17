@@ -5,6 +5,8 @@ import { resolveSession } from "./middleware/requireAuth";
 import { handleDocumentationRoute } from "./documentation/routes";
 import { handlePlatformRoute, runScheduledMaintenance } from "./platform/routes";
 import { handleNotificationRoute } from "./platform/notification-routes";
+import { handlePushRoute } from "./platform/push-routes";
+import { processPendingWebPush } from "./platform/web-push";
 import { handleAccountRoute } from "./account/routes";
 import { disableTwoFactorSafe, enableTwoFactorSafe } from "./account/two-factor";
 import { verifyTwoFactorLogin } from "./auth/routes";
@@ -24,6 +26,7 @@ function isFeaturePath(path: string): boolean {
     path === "/api/auth/2fa" ||
     path.startsWith("/api/auth/password-reset/") ||
     path.startsWith("/api/account/") ||
+    path.startsWith("/api/push/") ||
     path.includes("/documentation") ||
     path.includes("/documents/") ||
     path.endsWith("/dashboard") ||
@@ -71,6 +74,9 @@ export default {
       const actor = await resolveSession(request, env);
       if (!actor) return withCors(json({ error: "Not authorized." }, 401), request, env);
 
+      const push = await handlePushRoute(request, env, actor);
+      if (push) return withCors(push, request, env);
+
       if (path.startsWith("/api/account/")) {
         if (path === "/api/account/two-factor/enable" && request.method === "POST") {
           return withCors(await enableTwoFactorSafe(request, env, actor), request, env);
@@ -98,10 +104,13 @@ export default {
     }
   },
 
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil((async () => {
-      await runScheduledMaintenance(env);
-      await processFileDeletionQueue(env);
+      await processPendingWebPush(env);
+      if (controller.cron === "17 3 * * *") {
+        await runScheduledMaintenance(env);
+        await processFileDeletionQueue(env);
+      }
     })());
   },
 };
