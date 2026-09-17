@@ -18,6 +18,7 @@ import {
   listAgentActiveProperties,
   reassignUnitLeaderHardened,
 } from "./hardening/business";
+import { assignTenantAsUnitLeader, removeTenantUnitLeader } from "./hardening/unit-leader-tenant";
 
 const ADMIN_RESET_PASSWORD = /^\/api\/admin\/users\/([^/]+)\/reset-password$/;
 const ADMIN_USER_STATUS = /^\/api\/admin\/users\/([^/]+)\/status$/;
@@ -27,6 +28,7 @@ const OWNER_AGREEMENT_DOWNLOAD = /^\/api\/owner\/agreements\/([^/]+)\/download$/
 const OWNER_PROPERTY_UNITS = /^\/api\/owner\/properties\/([^/]+)\/units$/;
 const OWNER_AGENT_ASSIGNMENTS = /^\/api\/owner\/agents\/([^/]+)\/assignments$/;
 const OWNER_UNIT_LEADER_UNIT = /^\/api\/owner\/unit-leaders\/([^/]+)\/unit$/;
+const OWNER_UNIT_TENANT_LEADER = /^\/api\/owner\/units\/([^/]+)\/unit-leader$/;
 
 const OWNER_LEASE_DEPOSIT = /^\/api\/owner\/leases\/([^/]+)\/deposit$/;
 const OWNER_LEASE_DEPOSIT_DEDUCTIONS = /^\/api\/owner\/leases\/([^/]+)\/deposit\/deductions$/;
@@ -74,6 +76,19 @@ export default {
         if (!requireRole(sessionUser, ["OWNER"])) return cors(json({ error: "Not authorized." }, 403), request, env);
         const [, agentId] = pathname.match(OWNER_AGENT_ASSIGNMENTS)!;
         return cors(await createAssignmentHardened(request, env, sessionUser!, agentId), request, env);
+      }
+
+      if (OWNER_UNIT_TENANT_LEADER.test(pathname) && (method === "POST" || method === "DELETE")) {
+        const sessionUser = await resolveSession(request, env);
+        if (!requireRole(sessionUser, ["OWNER"])) return cors(json({ error: "Not authorized." }, 403), request, env);
+        const [, unitId] = pathname.match(OWNER_UNIT_TENANT_LEADER)!;
+        return cors(
+          method === "POST"
+            ? await assignTenantAsUnitLeader(request, env, sessionUser!, unitId)
+            : await removeTenantUnitLeader(env, sessionUser!, unitId),
+          request,
+          env,
+        );
       }
 
       if (pathname === "/api/owner/unit-leaders" && method === "POST") {
@@ -195,7 +210,7 @@ export default {
       let response: Response;
 
       if (isTenantNotificationMutation) {
-        if (!requireRole(sessionUser, ["TENANT"])) {
+        if (!requireRole(sessionUser, ["TENANT", "UNIT_LEADER"])) {
           response = json({ error: "Not authorized." }, 403);
         } else if (method === "POST") {
           response = await markMyNotificationsRead(env, sessionUser!);
