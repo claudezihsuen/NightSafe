@@ -6,6 +6,8 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { FileUploader } from "@/components/FileUploader";
 import { useTenantPayments } from "@/lib/tenant-payments-context";
+import { useAuth } from "@/lib/auth-context";
+import { tenantAppBase } from "@/lib/tenant-route";
 import { ApiError } from "@/lib/api";
 import { formatCents, formatDate, formatMonth } from "@/lib/format";
 
@@ -21,6 +23,8 @@ function Row({ label, value }: { label: string; value: string }) {
 export function TenantMakePayment() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const base = tenantAppBase(user?.role);
   const { getRecord, submitPayment, loading } = useTenantPayments();
   const record = id ? getRecord(id) : undefined;
 
@@ -30,7 +34,7 @@ export function TenantMakePayment() {
   const [submitted, setSubmitted] = useState(false);
 
   if (loading) return null;
-  if (!record) return <Navigate to="/tenant/payments" replace />;
+  if (!record) return <Navigate to={`${base}/payments`} replace />;
 
   if (submitted) {
     return (
@@ -42,16 +46,15 @@ export function TenantMakePayment() {
         <p className="mt-1.5 max-w-xs text-sm text-ink/60">
           Waiting for owner/agent confirmation. We'll notify you once it's reviewed.
         </p>
-        <Button className="mt-6" onClick={() => navigate(`/tenant/payments/${record.id}`)}>
+        <Button className="mt-6" onClick={() => navigate(`${base}/payments/${record.id}`)}>
           View payment
         </Button>
       </div>
     );
   }
 
-  // Only a month still awaiting the tenant can be submitted here.
   if (record.status !== "WAITING_PAYMENT") {
-    return <Navigate to={`/tenant/payments/${record.id}`} replace />;
+    return <Navigate to={`${base}/payments/${record.id}`} replace />;
   }
 
   const handleSubmit = async () => {
@@ -74,7 +77,7 @@ export function TenantMakePayment() {
   return (
     <div className="animate-fade-in-up">
       <Link
-        to="/tenant/payments"
+        to={`${base}/payments`}
         className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink/60 hover:text-ink"
       >
         <ArrowLeft className="h-4 w-4" />
