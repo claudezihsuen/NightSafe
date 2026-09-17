@@ -38,8 +38,8 @@ async function ensureVapidKeys(env: Env): Promise<VapidKeyRow> {
     true,
     ["sign", "verify"],
   ) as CryptoKeyPair;
-  const publicRaw = await crypto.subtle.exportKey("raw", pair.publicKey);
-  const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+  const publicRaw = await crypto.subtle.exportKey("raw", pair.publicKey) as ArrayBuffer;
+  const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey) as JsonWebKey;
   const publicKey = base64Url(publicRaw);
 
   await env.DB.prepare(
