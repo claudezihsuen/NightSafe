@@ -13,7 +13,7 @@ export function Sidebar({ items }: SidebarProps) {
       <div className="mb-8 px-1">
         <img
           src="/brand/nightsafe-lockup.svg"
-          alt="NightSafe — Properties rest easier"
+          alt="NightSafe"
           className="h-auto w-[205px]"
         />
       </div>
