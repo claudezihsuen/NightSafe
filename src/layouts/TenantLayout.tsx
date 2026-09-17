@@ -1,5 +1,7 @@
 import { LayoutDashboard, Wallet, FileText } from "lucide-react";
 import { AppShell } from "./AppShell";
+import { UnitLeaderLayout } from "./UnitLeaderLayout";
+import { useAuth } from "@/lib/auth-context";
 import type { NavItem } from "@/types";
 
 const items: NavItem[] = [
@@ -9,5 +11,7 @@ const items: NavItem[] = [
 ];
 
 export function TenantLayout() {
+  const { user } = useAuth();
+  if (user?.role === "UNIT_LEADER") return <UnitLeaderLayout />;
   return <AppShell items={items} roleLabel="Tenant" />;
 }
