@@ -76,7 +76,7 @@ export function LoginPage() {
         <div className="mb-6 flex justify-center">
           <img
             src="/brand/nightsafe-lockup.svg"
-            alt="NightSafe — Properties rest easier"
+            alt="NightSafe"
             className="h-auto w-full max-w-[285px]"
           />
         </div>
