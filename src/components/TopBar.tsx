@@ -161,7 +161,10 @@ export function TopBar() {
   }
 
   return (
-    <header className="relative z-40 flex items-center justify-between border-b border-border/80 bg-card/90 px-4 py-3 shadow-[0_1px_0_rgba(90,63,43,0.03)] backdrop-blur sm:px-6 lg:px-10">
+    <header
+      className="relative z-40 flex items-center justify-between border-b border-border/80 bg-card/90 px-4 py-3 shadow-[0_1px_0_rgba(90,63,43,0.03)] backdrop-blur sm:px-6 lg:px-10"
+      style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}
+    >
       <div className="min-w-0" data-i18n-skip>
         <p className="truncate text-sm font-medium text-ink">{displayName}</p>
         <p className="truncate text-xs text-ink/50">{user?.email}</p>
