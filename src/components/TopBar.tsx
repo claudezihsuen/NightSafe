@@ -11,9 +11,12 @@ import {
   getSeenNotificationIds,
   getSystemNotificationPermission,
   getSystemNotificationPreference,
+  hasRegisteredPushSubscription,
   hasSeenNotificationSnapshot,
   rememberNotificationIds,
+  setSystemNotificationPreference,
   showSystemNotification,
+  unregisterPushSubscription,
 } from "@/lib/system-notifications";
 
 interface NotificationResponse {
@@ -37,13 +40,16 @@ export function TopBar() {
   const settingsPath = user ? `${ROLE_HOME[user.role]}/settings`.replace("//", "/") : "/login";
   const notificationsPath = user ? `${ROLE_HOME[user.role]}/notifications`.replace("//", "/") : "/login";
 
-  function syncSystemAlertState() {
+  async function syncSystemAlertState() {
     if (!user) {
       setSystemAlertsOn(false);
       return;
     }
+    const pushReady = await hasRegisteredPushSubscription();
     setSystemAlertsOn(
-      getSystemNotificationPreference(user.id) && getSystemNotificationPermission() === "granted",
+      getSystemNotificationPreference(user.id)
+      && getSystemNotificationPermission() === "granted"
+      && pushReady,
     );
   }
 
@@ -65,6 +71,7 @@ export function TopBar() {
 
       if (
         options.allowSystemAlert
+        && !systemAlertsOn
         && unseen.length > 0
         && getSystemNotificationPreference(user.id)
         && getSystemNotificationPermission() === "granted"
@@ -94,12 +101,12 @@ export function TopBar() {
 
   useEffect(() => {
     if (!user) return;
-    syncSystemAlertState();
+    void syncSystemAlertState();
     void loadNotifications({ allowSystemAlert: true });
     const timer = window.setInterval(() => void loadNotifications({ allowSystemAlert: true }), 30000);
-    const sync = () => syncSystemAlertState();
+    const sync = () => { void syncSystemAlertState(); };
     const refreshOnFocus = () => {
-      syncSystemAlertState();
+      void syncSystemAlertState();
       void loadNotifications({ allowSystemAlert: true });
     };
     window.addEventListener(SYSTEM_NOTIFICATION_PREFERENCE_EVENT, sync);
@@ -109,7 +116,7 @@ export function TopBar() {
       window.removeEventListener(SYSTEM_NOTIFICATION_PREFERENCE_EVENT, sync);
       window.removeEventListener("focus", refreshOnFocus);
     };
-  }, [user?.id]);
+  }, [user?.id, systemAlertsOn]);
 
   async function markRead(notification: NightSafeNotification) {
     if (!notification.read_at) {
@@ -145,6 +152,10 @@ export function TopBar() {
   async function signOut() {
     setAccountOpen(false);
     setNotificationsOpen(false);
+    if (user) {
+      await unregisterPushSubscription();
+      setSystemNotificationPreference(user.id, false);
+    }
     await logout();
     navigate("/login", { replace: true });
   }
