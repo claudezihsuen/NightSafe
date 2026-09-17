@@ -71,21 +71,28 @@ interface LeaderRow {
   email: string;
   phone: string | null;
   status: string;
-  unit_id: string;
-  unit_label: string;
-  property_name: string;
+  unit_id: string | null;
+  unit_label: string | null;
+  property_name: string | null;
   created_at: string;
 }
 
+/**
+ * Returns current Unit Leaders plus active tenant candidates. Non-leader
+ * candidates carry a synthetic unit_id that can never equal a real unit id;
+ * this preserves the existing Owner UI's current-leader lookup while making
+ * active tenants available in its assignment picker.
+ */
 async function listLeaseBasedUnitLeaders(env: Env, actor: SessionUser): Promise<Response> {
   const { results } = await env.DB.prepare(
     `SELECT tenant.id, tenant.name, tenant.email, tenant.phone, tenant.status,
-            l.unit_id, u.label AS unit_label, p.name AS property_name, tenant.created_at
+            CASE WHEN l.is_unit_leader = 1 THEN l.unit_id ELSE 'candidate:' || l.unit_id END AS unit_id,
+            u.label AS unit_label, p.name AS property_name, tenant.created_at
      FROM leases l
      JOIN users tenant ON tenant.id = l.tenant_id
      JOIN units u ON u.id = l.unit_id
      JOIN properties p ON p.id = u.property_id
-     WHERE p.owner_id = ? AND l.status = 'ACTIVE' AND l.is_unit_leader = 1
+     WHERE p.owner_id = ? AND l.status = 'ACTIVE'
      ORDER BY tenant.name`,
   )
     .bind(actor.id)
