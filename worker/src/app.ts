@@ -16,6 +16,10 @@ import {
   verifyPasswordReset,
 } from "./auth/password-reset";
 import { processFileDeletionQueue } from "./storage/file-deletion";
+import {
+  handleOwnerUnitLeaderRoleRoute,
+  handleUnitLeaderTenantRoute,
+} from "./unit-leader/role-routes";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
@@ -27,11 +31,12 @@ function isFeaturePath(path: string): boolean {
     path.startsWith("/api/auth/password-reset/") ||
     path.startsWith("/api/account/") ||
     path.startsWith("/api/push/") ||
+    path.startsWith("/api/tenant/") ||
+    path.startsWith("/api/owner/unit-leaders") ||
     path.includes("/documentation") ||
     path.includes("/documents/") ||
     path.endsWith("/dashboard") ||
     path.startsWith("/api/notifications") ||
-    path.startsWith("/api/tenant/notifications") ||
     path.startsWith("/api/unit-leader/notifications") ||
     path === "/api/owner/lifecycle" ||
     path.startsWith("/api/owner/tenancies/") ||
@@ -88,14 +93,28 @@ export default {
         return withCors(account ?? json({ error: "Not found." }, 404), request, env);
       }
 
-      const documentation = await handleDocumentationRoute(request, env, actor);
+      const ownerUnitLeader = await handleOwnerUnitLeaderRoleRoute(request, env, actor);
+      if (ownerUnitLeader) return withCors(ownerUnitLeader, request, env);
+
+      // A Unit Leader is still the tenant for rent, deposit and documents.
+      // Reuse the tenant-facing handlers while preserving the real UNIT_LEADER
+      // role for the dedicated water/electricity APIs.
+      const tenantFeatureActor =
+        actor.role === "UNIT_LEADER" && path.startsWith("/api/tenant/")
+          ? { ...actor, role: "TENANT" as const }
+          : actor;
+
+      const documentation = await handleDocumentationRoute(request, env, tenantFeatureActor);
       if (documentation) return withCors(documentation, request, env);
 
-      const notifications = await handleNotificationRoute(request, env, actor);
+      const notifications = await handleNotificationRoute(request, env, tenantFeatureActor);
       if (notifications) return withCors(notifications, request, env);
 
-      const platform = await handlePlatformRoute(request, env, actor);
+      const platform = await handlePlatformRoute(request, env, tenantFeatureActor);
       if (platform) return withCors(platform, request, env);
+
+      const tenantBridge = await handleUnitLeaderTenantRoute(request, env, actor);
+      if (tenantBridge) return withCors(tenantBridge, request, env);
 
       return existingWorker.fetch(request, env);
     } catch (error) {
