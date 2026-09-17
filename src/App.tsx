@@ -55,6 +55,7 @@ import { TenantNotifications } from "@/pages/tenant/TenantNotifications";
 import { TenantPaymentsProvider } from "@/lib/tenant-payments-context";
 import { DocumentationPage } from "@/pages/documentation/DocumentationPage";
 import { DocumentDetailPage } from "@/pages/documentation/DocumentDetailPage";
+import { NotificationListPage } from "@/components/notifications/NotificationListPage";
 
 export default function App() {
   return (
@@ -67,6 +68,7 @@ export default function App() {
 
           <Route path="/admin" element={<ProtectedRoute allowedRoles={["SUPER_ADMIN", "ADMIN"]}><AdminProvider><AdminLayout /></AdminProvider></ProtectedRoute>}>
             <Route index element={<AdminUsers />} />
+            <Route path="notifications" element={<NotificationListPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
 
@@ -86,6 +88,7 @@ export default function App() {
             <Route path="documentation/:documentId" element={<DocumentDetailPage />} />
             <Route path="agreements" element={<Navigate to="/owner/documentation" replace />} />
             <Route path="lifecycle" element={<OwnerTenantLifecycle />} />
+            <Route path="notifications" element={<NotificationListPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
 
@@ -100,6 +103,7 @@ export default function App() {
             <Route path="leases/:leaseId/deposit" element={<AgentDepositManagement />} />
             <Route path="documentation" element={<DocumentationPage />} />
             <Route path="documentation/:documentId" element={<DocumentDetailPage />} />
+            <Route path="notifications" element={<NotificationListPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
 

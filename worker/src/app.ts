@@ -27,6 +27,7 @@ function isFeaturePath(path: string): boolean {
     path.includes("/documentation") ||
     path.includes("/documents/") ||
     path.endsWith("/dashboard") ||
+    path.startsWith("/api/notifications") ||
     path.startsWith("/api/tenant/notifications") ||
     path.startsWith("/api/unit-leader/notifications") ||
     path === "/api/owner/lifecycle" ||

@@ -1,4 +1,4 @@
-const CACHE = "nightsafe-shell-v3";
+const CACHE = "nightsafe-shell-v4";
 const SHELL = [
   "/",
   "/offline.html",
@@ -18,6 +18,28 @@ self.addEventListener("activate", (event) => {
     caches.keys()
       .then((keys) => Promise.all(keys.filter((key) => key.startsWith("nightsafe-shell-") && key !== CACHE).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const href = event.notification.data?.href || "/";
+  const requested = new URL(href, self.location.origin);
+  const targetUrl = requested.origin === self.location.origin ? requested.href : self.location.origin;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windows) => {
+      for (const client of windows) {
+        if (client.url === targetUrl && "focus" in client) return client.focus();
+      }
+      for (const client of windows) {
+        if ("navigate" in client && "focus" in client) {
+          const navigated = await client.navigate(targetUrl);
+          return navigated?.focus();
+        }
+      }
+      return self.clients.openWindow ? self.clients.openWindow(targetUrl) : undefined;
+    }),
   );
 });
 

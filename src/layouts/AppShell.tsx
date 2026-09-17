@@ -1,7 +1,8 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "@/components/Sidebar";
 import { BottomNav } from "@/components/BottomNav";
 import { TopBar } from "@/components/TopBar";
+import { NotificationSettingsCard } from "@/components/notifications/NotificationSettingsCard";
 import type { NavItem } from "@/types";
 
 interface AppShellProps {
@@ -10,6 +11,9 @@ interface AppShellProps {
 }
 
 export function AppShell({ items, roleLabel }: AppShellProps) {
+  const location = useLocation();
+  const showNotificationSettings = location.pathname.endsWith("/settings");
+
   return (
     <div className="flex min-h-screen bg-canvas">
       <Sidebar items={items} roleLabel={roleLabel} />
@@ -18,6 +22,7 @@ export function AppShell({ items, roleLabel }: AppShellProps) {
         <main className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-10 lg:pb-10 lg:pt-8">
           <div className="mx-auto w-full max-w-5xl">
             <Outlet />
+            {showNotificationSettings && <div className="mt-5"><NotificationSettingsCard /></div>}
           </div>
         </main>
       </div>

@@ -8,11 +8,11 @@ import { api, ApiError } from "@/lib/api";
 import type { NightSafeNotification } from "@/types";
 
 interface NotificationListPageProps {
-  apiPrefix: "tenant" | "unit-leader";
+  apiPrefix?: "tenant" | "unit-leader";
   description?: string;
 }
 
-export function NotificationListPage({ apiPrefix, description }: NotificationListPageProps) {
+export function NotificationListPage({ description }: NotificationListPageProps) {
   const [notifications, setNotifications] = useState<NightSafeNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -21,7 +21,7 @@ export function NotificationListPage({ apiPrefix, description }: NotificationLis
   async function load() {
     try {
       setError(null);
-      const data = await api.get<{ notifications: NightSafeNotification[]; unreadCount: number }>(`/api/${apiPrefix}/notifications`);
+      const data = await api.get<{ notifications: NightSafeNotification[]; unreadCount: number }>("/api/notifications");
       setNotifications(data.notifications);
       setUnreadCount(data.unreadCount);
     } catch (err) {
@@ -31,11 +31,11 @@ export function NotificationListPage({ apiPrefix, description }: NotificationLis
     }
   }
 
-  useEffect(() => { void load(); }, [apiPrefix]);
+  useEffect(() => { void load(); }, []);
 
   async function markRead(id: string) {
     try {
-      await api.post(`/api/${apiPrefix}/notifications/${id}/read`);
+      await api.post(`/api/notifications/${encodeURIComponent(id)}/read`);
       setNotifications((items) => items.map((item) => item.id === id ? { ...item, read_at: item.read_at ?? new Date().toISOString() } : item));
       setUnreadCount((count) => Math.max(0, count - 1));
     } catch (err) {
@@ -45,7 +45,7 @@ export function NotificationListPage({ apiPrefix, description }: NotificationLis
 
   async function markAll() {
     try {
-      await api.post(`/api/${apiPrefix}/notifications/read-all`);
+      await api.post("/api/notifications/read-all");
       const now = new Date().toISOString();
       setNotifications((items) => items.map((item) => ({ ...item, read_at: item.read_at ?? now })));
       setUnreadCount(0);
@@ -58,7 +58,7 @@ export function NotificationListPage({ apiPrefix, description }: NotificationLis
     <div className="animate-fade-in-up">
       <PageHeader
         title="Notifications"
-        description={description ?? `${unreadCount} unread · in-app updates only.`}
+        description={description ?? `${unreadCount} unread · NightSafe updates.`}
         action={unreadCount ? <Button size="sm" variant="secondary" onClick={() => void markAll()} icon={<CheckCheck className="h-4 w-4" />}>Mark all read</Button> : undefined}
       />
       {error && <p className="mb-4 rounded-input bg-status-overdue/10 p-3 text-sm text-status-overdue">{error}</p>}
@@ -86,6 +86,7 @@ export function NotificationListPage({ apiPrefix, description }: NotificationLis
                   </div>
                   {!notification.read_at && (
                     <button
+                      type="button"
                       onClick={(event) => { event.preventDefault(); event.stopPropagation(); void markRead(notification.id); }}
                       className="shrink-0 rounded-full border border-sage-200 px-2 py-1 text-xs font-medium text-sage-700"
                     >
