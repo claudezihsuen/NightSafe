@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 330" role="img" aria-labelledby="title desc">
+  <title id="title">NightSafe</title><desc id="desc">Properties rest easier</desc>
+  <defs>
+    <linearGradient id="moon" x1="80" y1="35" x2="335" y2="305"><stop stop-color="#173b78"/><stop offset=".58" stop-color="#071d49"/><stop offset="1" stop-color="#0d7695"/></linearGradient>
+    <linearGradient id="inner" x1="160" y1="50" x2="285" y2="270"><stop stop-color="#eef7ff"/><stop offset="1" stop-color="#9db9d5"/></linearGradient>
+    <linearGradient id="safe" x1="625" y1="0" x2="965" y2="0"><stop stop-color="#08265a"/><stop offset=".35" stop-color="#194d7c"/><stop offset="1" stop-color="#2d97b1"/></linearGradient>
+    <linearGradient id="star" x1="304" y1="72" x2="350" y2="130"><stop stop-color="#36d5e9"/><stop offset="1" stop-color="#1399b9"/></linearGradient>
+    <linearGradient id="window" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff1a8"/><stop offset="1" stop-color="#ffc95b"/></linearGradient>
+  </defs>
+  <g transform="translate(10 7) scale(.68)">
+    <path fill="url(#moon)" d="M355 62c-95 4-170 82-170 178 0 91 68 166 156 177-31 20-67 31-106 31-108 0-195-87-195-195S127 58 235 58c43 0 83 14 120 4Z"/>
+    <path fill="url(#inner)" d="M348 72c-70 16-122 78-122 153 0 78 57 143 132 156-19 12-41 19-64 19-76 0-138-62-138-138 0-91 86-158 192-190Z" opacity=".92"/>
+    <path fill="#081c47" d="M198 266 275 205a18 18 0 0 1 22 0l77 61v99a20 20 0 0 1-20 20H218a20 20 0 0 1-20-20Z"/>
+    <path fill="#102a59" d="m183 273 92-73a18 18 0 0 1 22 0l92 73-18 23-85-67-85 67Z"/>
+    <g fill="url(#window)"><rect x="252" y="302" width="25" height="25" rx="5"/><rect x="286" y="302" width="25" height="25" rx="5"/><rect x="252" y="336" width="25" height="25" rx="5"/><rect x="286" y="336" width="25" height="25" rx="5"/></g>
+    <path fill="url(#star)" d="m370 110 14 35 36 14-36 14-14 35-14-35-36-14 36-14Z"/>
+  </g>
+  <text x="350" y="190" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="134" font-weight="750" letter-spacing="-7" fill="#061b49">Night</text>
+  <text x="690" y="190" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="134" font-weight="750" letter-spacing="-7" fill="url(#safe)">Safe</text>
+  <text x="356" y="274" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="26" font-weight="500" letter-spacing="13" fill="#193568">PROPERTIES REST EASIER</text>
+</svg>
