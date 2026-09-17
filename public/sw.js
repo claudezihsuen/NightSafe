@@ -1,4 +1,4 @@
-const CACHE = "nightsafe-shell-v4";
+const CACHE = "nightsafe-shell-v5";
 const SHELL = [
   "/",
   "/offline.html",
@@ -19,6 +19,41 @@ self.addEventListener("activate", (event) => {
       .then((keys) => Promise.all(keys.filter((key) => key.startsWith("nightsafe-shell-") && key !== CACHE).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
+});
+
+self.addEventListener("push", (event) => {
+  event.waitUntil((async () => {
+    let title = "NightSafe";
+    let body = "You have a new NightSafe notification.";
+    let href = "/";
+    let tag = "nightsafe-push";
+
+    try {
+      const response = await fetch("/api/notifications?limit=10", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const notification = data.notifications?.find((item) => !item.read_at) ?? data.notifications?.[0];
+        if (notification) {
+          title = notification.title || title;
+          body = notification.body || body;
+          href = notification.href || href;
+          tag = `nightsafe-${notification.id}`;
+        }
+      }
+    } catch {
+      // A visible generic notification is still required if the data request fails.
+    }
+
+    await self.registration.showNotification(title, {
+      body,
+      icon: "/icons/nightsafe-192.png",
+      tag,
+      data: { href },
+    });
+  })());
 });
 
 self.addEventListener("notificationclick", (event) => {
