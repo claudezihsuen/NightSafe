@@ -1,5 +1,4 @@
 import { NavLink } from "react-router-dom";
-import { ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/types";
 
@@ -11,12 +10,12 @@ interface SidebarProps {
 export function Sidebar({ items }: SidebarProps) {
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-white px-4 py-6 lg:flex">
-      <div className="mb-8 flex items-center gap-2.5 px-2">
-        <ShieldCheck className="h-8 w-8 shrink-0 text-midnight-700" strokeWidth={1.8} />
-        <div>
-          <p className="text-base font-semibold leading-tight text-ink">NightSafe</p>
-          <p className="text-[11px] leading-tight text-ink/50">Properties rest easier</p>
-        </div>
+      <div className="mb-8 px-1">
+        <img
+          src="/brand/nightsafe-lockup.svg"
+          alt="NightSafe — Properties rest easier"
+          className="h-auto w-[205px]"
+        />
       </div>
 
       <nav className="flex flex-1 flex-col gap-1">
@@ -39,8 +38,6 @@ export function Sidebar({ items }: SidebarProps) {
           </NavLink>
         ))}
       </nav>
-
-      <p className="px-2 text-xs text-ink/40">Your space. Managed with care.</p>
     </aside>
   );
 }
