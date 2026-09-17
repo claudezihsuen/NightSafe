@@ -20,6 +20,7 @@ import {
   handleOwnerUnitLeaderRoleRoute,
   handleUnitLeaderTenantRoute,
 } from "./unit-leader/role-routes";
+import { handleUnitLeaderLifecycleRoute } from "./unit-leader/lifecycle-routes";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
@@ -95,6 +96,9 @@ export default {
 
       const ownerUnitLeader = await handleOwnerUnitLeaderRoleRoute(request, env, actor);
       if (ownerUnitLeader) return withCors(ownerUnitLeader, request, env);
+
+      const unitLeaderLifecycle = await handleUnitLeaderLifecycleRoute(request, env, actor);
+      if (unitLeaderLifecycle) return withCors(unitLeaderLifecycle, request, env);
 
       // A Unit Leader is still the tenant for rent, deposit and documents.
       // Reuse the tenant-facing handlers while preserving the real UNIT_LEADER
