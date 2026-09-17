@@ -38,6 +38,7 @@ export function NotificationSettingsCard() {
   }, [user?.id]);
 
   if (!user) return null;
+  const userId = user.id;
 
   const isIOS = isIOSDevice();
   const isStandalone = isStandaloneApp();
@@ -73,7 +74,7 @@ export function NotificationSettingsCard() {
       const nextPermission = await requestSystemNotificationPermission();
       setPermission(nextPermission);
       if (nextPermission !== "granted") {
-        setSystemNotificationPreference(user.id, false);
+        setSystemNotificationPreference(userId, false);
         setEnabled(false);
         setFeedback({
           type: "error",
@@ -83,7 +84,7 @@ export function NotificationSettingsCard() {
         });
         return;
       }
-      setSystemNotificationPreference(user.id, true);
+      setSystemNotificationPreference(userId, true);
       setEnabled(true);
       setFeedback({ type: "success", text: "Notifications turned on for this device." });
     } finally {
@@ -92,7 +93,7 @@ export function NotificationSettingsCard() {
   }
 
   function turnOff() {
-    setSystemNotificationPreference(user.id, false);
+    setSystemNotificationPreference(userId, false);
     setEnabled(false);
     setFeedback({ type: "success", text: "Notifications turned off for this device." });
   }
