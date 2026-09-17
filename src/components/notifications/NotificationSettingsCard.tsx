@@ -5,11 +5,14 @@ import { useI18n } from "@/i18n/I18nProvider";
 import {
   getSystemNotificationPermission,
   getSystemNotificationPreference,
+  hasRegisteredPushSubscription,
   isIOSDevice,
   isStandaloneApp,
+  registerPushSubscription,
   requestSystemNotificationPermission,
   setSystemNotificationPreference,
-  systemNotificationsSupported,
+  unregisterPushSubscription,
+  webPushSupported,
   type SystemNotificationPermission,
 } from "@/lib/system-notifications";
 import { Button } from "@/components/ui/Button";
@@ -21,20 +24,23 @@ export function NotificationSettingsCard() {
   const { user } = useAuth();
   const { t } = useI18n();
   const [enabled, setEnabled] = useState(false);
+  const [pushReady, setPushReady] = useState(false);
   const [permission, setPermission] = useState<SystemNotificationPermission>(getSystemNotificationPermission);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [saving, setSaving] = useState(false);
 
-  function syncState() {
+  async function syncState() {
     if (!user) return;
     setEnabled(getSystemNotificationPreference(user.id));
     setPermission(getSystemNotificationPermission());
+    setPushReady(await hasRegisteredPushSubscription());
   }
 
   useEffect(() => {
-    syncState();
-    window.addEventListener("focus", syncState);
-    return () => window.removeEventListener("focus", syncState);
+    const sync = () => { void syncState(); };
+    sync();
+    window.addEventListener("focus", sync);
+    return () => window.removeEventListener("focus", sync);
   }, [user?.id]);
 
   if (!user) return null;
@@ -42,8 +48,8 @@ export function NotificationSettingsCard() {
 
   const isIOS = isIOSDevice();
   const isStandalone = isStandaloneApp();
-  const supported = systemNotificationsSupported();
-  const effectiveEnabled = enabled && permission === "granted";
+  const supported = webPushSupported();
+  const effectiveEnabled = enabled && permission === "granted" && pushReady;
 
   let guidance = effectiveEnabled
     ? "Notifications are on for this device."
@@ -67,7 +73,7 @@ export function NotificationSettingsCard() {
         });
         return;
       }
-      if (!systemNotificationsSupported()) {
+      if (!webPushSupported()) {
         setFeedback({ type: "error", text: "System notifications aren't supported in this browser." });
         return;
       }
@@ -76,6 +82,7 @@ export function NotificationSettingsCard() {
       if (nextPermission !== "granted") {
         setSystemNotificationPreference(userId, false);
         setEnabled(false);
+        setPushReady(false);
         setFeedback({
           type: "error",
           text: nextPermission === "denied"
@@ -84,18 +91,42 @@ export function NotificationSettingsCard() {
         });
         return;
       }
+
+      const registered = await registerPushSubscription();
+      if (!registered) {
+        setSystemNotificationPreference(userId, false);
+        setEnabled(false);
+        setPushReady(false);
+        setFeedback({ type: "error", text: "Notifications are off for this device." });
+        return;
+      }
+
       setSystemNotificationPreference(userId, true);
       setEnabled(true);
+      setPushReady(true);
       setFeedback({ type: "success", text: "Notifications turned on for this device." });
+    } catch {
+      setSystemNotificationPreference(userId, false);
+      setEnabled(false);
+      setPushReady(false);
+      setFeedback({ type: "error", text: "Notifications are off for this device." });
     } finally {
       setSaving(false);
     }
   }
 
-  function turnOff() {
-    setSystemNotificationPreference(userId, false);
-    setEnabled(false);
-    setFeedback({ type: "success", text: "Notifications turned off for this device." });
+  async function turnOff() {
+    setSaving(true);
+    setFeedback(null);
+    try {
+      await unregisterPushSubscription();
+    } finally {
+      setSystemNotificationPreference(userId, false);
+      setEnabled(false);
+      setPushReady(false);
+      setSaving(false);
+      setFeedback({ type: "success", text: "Notifications turned off for this device." });
+    }
   }
 
   return (
@@ -116,7 +147,7 @@ export function NotificationSettingsCard() {
             {effectiveEnabled ? t("common.enabled") : t("common.disabled")}
           </span>
           {effectiveEnabled ? (
-            <Button type="button" size="sm" variant="secondary" onClick={turnOff}>Turn off notifications</Button>
+            <Button type="button" size="sm" variant="secondary" loading={saving} onClick={() => void turnOff()}>Turn off notifications</Button>
           ) : (
             <Button type="button" size="sm" loading={saving} onClick={() => void turnOn()}>Turn on notifications</Button>
           )}
