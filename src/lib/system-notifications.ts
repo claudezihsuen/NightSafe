@@ -1,4 +1,5 @@
 import type { NightSafeNotification } from "@/types";
+import { api } from "@/lib/api";
 
 export const SYSTEM_NOTIFICATION_PREFERENCE_EVENT = "nightsafe-system-notification-preference";
 const PREFERENCE_KEY_PREFIX = "nightsafe-system-notifications:";
@@ -18,6 +19,15 @@ function storageSet(key: string, value: string): void {
   try { window.localStorage.setItem(key, value); } catch { /* Device storage can be unavailable in private modes. */ }
 }
 
+function base64UrlToArrayBuffer(value: string): ArrayBuffer {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes.buffer;
+}
+
 export function isIOSDevice(): boolean {
   if (typeof navigator === "undefined") return false;
   return /iPad|iPhone|iPod/i.test(navigator.userAgent)
@@ -32,6 +42,14 @@ export function isStandaloneApp(): boolean {
 
 export function systemNotificationsSupported(): boolean {
   return typeof window !== "undefined" && "Notification" in window;
+}
+
+export function webPushSupported(): boolean {
+  return systemNotificationsSupported()
+    && typeof navigator !== "undefined"
+    && "serviceWorker" in navigator
+    && typeof window !== "undefined"
+    && "PushManager" in window;
 }
 
 export function getSystemNotificationPermission(): SystemNotificationPermission {
@@ -53,6 +71,54 @@ export async function requestSystemNotificationPermission(): Promise<SystemNotif
   if (!systemNotificationsSupported()) return "unsupported";
   if (Notification.permission === "granted" || Notification.permission === "denied") return Notification.permission;
   return Notification.requestPermission();
+}
+
+export async function hasRegisteredPushSubscription(): Promise<boolean> {
+  if (!webPushSupported()) return false;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    return Boolean(await registration.pushManager.getSubscription());
+  } catch {
+    return false;
+  }
+}
+
+export async function registerPushSubscription(): Promise<boolean> {
+  if (!webPushSupported() || Notification.permission !== "granted") return false;
+
+  const registration = await navigator.serviceWorker.ready;
+  const { publicKey } = await api.get<{ publicKey: string }>("/api/push/public-key");
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: base64UrlToArrayBuffer(publicKey),
+    });
+  }
+
+  const serialized = subscription.toJSON();
+  await api.post("/api/push/subscriptions", {
+    endpoint: subscription.endpoint,
+    keys: serialized.keys ?? {},
+  });
+  return true;
+}
+
+export async function unregisterPushSubscription(): Promise<void> {
+  if (!webPushSupported()) return;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) return;
+    try {
+      await api.delete("/api/push/subscriptions", { endpoint: subscription.endpoint });
+    } catch {
+      // Local opt-out still takes priority if the network is temporarily unavailable.
+    }
+    await subscription.unsubscribe();
+  } catch {
+    // Notification preference can still be disabled locally when the browser API fails.
+  }
 }
 
 export function hasSeenNotificationSnapshot(userId: string): boolean {
@@ -85,7 +151,7 @@ export async function showSystemNotification(notification: NightSafeNotification
 
   const options: NotificationOptions = {
     body: notification.body,
-    icon: "/icons/nightsafe-android.svg",
+    icon: "/icons/nightsafe-192.png",
     tag: `nightsafe-${notification.id}`,
     data: { href: notification.href || "/" },
   };
