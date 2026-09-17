@@ -121,7 +121,7 @@ export default function App() {
             <Route path="settings" element={<SettingsPage />} />
           </Route>
 
-          <Route path="/tenant" element={<ProtectedRoute allowedRoles={["TENANT"]}><TenantPaymentsProvider><TenantLayout /></TenantPaymentsProvider></ProtectedRoute>}>
+          <Route path="/tenant" element={<ProtectedRoute allowedRoles={["TENANT", "UNIT_LEADER"]}><TenantPaymentsProvider><TenantLayout /></TenantPaymentsProvider></ProtectedRoute>}>
             <Route index element={<TenantHome />} />
             <Route path="payments" element={<TenantPayments />} />
             <Route path="payments/:id" element={<TenantPaymentDetails />} />
