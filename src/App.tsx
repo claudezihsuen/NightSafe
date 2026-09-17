@@ -39,7 +39,6 @@ import { AgentUtilityReview } from "@/pages/agent/AgentUtilityReview";
 import { AgentUtilitiesProvider } from "@/lib/agent-utilities-context";
 import { AgentDepositManagement } from "@/pages/agent/AgentDepositManagement";
 import { UnitLeaderLayout } from "@/layouts/UnitLeaderLayout";
-import { UnitLeaderDashboard } from "@/pages/unit-leader/UnitLeaderDashboard";
 import { UnitLeaderWater } from "@/pages/unit-leader/UnitLeaderWater";
 import { UnitLeaderElectricity } from "@/pages/unit-leader/UnitLeaderElectricity";
 import { UnitLeaderHistory } from "@/pages/unit-leader/UnitLeaderHistory";
@@ -107,8 +106,14 @@ export default function App() {
             <Route path="settings" element={<SettingsPage />} />
           </Route>
 
-          <Route path="/unit-leader" element={<ProtectedRoute allowedRoles={["UNIT_LEADER"]}><UnitLeaderProvider><UnitLeaderLayout /></UnitLeaderProvider></ProtectedRoute>}>
-            <Route index element={<UnitLeaderDashboard />} />
+          <Route path="/unit-leader" element={<ProtectedRoute allowedRoles={["UNIT_LEADER"]}><TenantPaymentsProvider><UnitLeaderProvider><UnitLeaderLayout /></UnitLeaderProvider></TenantPaymentsProvider></ProtectedRoute>}>
+            <Route index element={<TenantHome />} />
+            <Route path="payments" element={<TenantPayments />} />
+            <Route path="payments/:id" element={<TenantPaymentDetails />} />
+            <Route path="payments/:id/pay" element={<TenantMakePayment />} />
+            <Route path="documentation" element={<DocumentationPage />} />
+            <Route path="documentation/:documentId" element={<DocumentDetailPage />} />
+            <Route path="deposit" element={<TenantDeposit />} />
             <Route path="water" element={<UnitLeaderWater />} />
             <Route path="electricity" element={<UnitLeaderElectricity />} />
             <Route path="notifications" element={<UnitLeaderNotifications />} />
