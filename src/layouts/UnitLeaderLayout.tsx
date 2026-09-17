@@ -1,12 +1,13 @@
-import { Droplets, History, LayoutDashboard, Zap } from "lucide-react";
+import { Droplets, FileText, LayoutDashboard, Wallet, Zap } from "lucide-react";
 import { AppShell } from "./AppShell";
 import type { NavItem } from "@/types";
 
 const items: NavItem[] = [
-  { label: "Dashboard", path: "/unit-leader", icon: LayoutDashboard },
+  { label: "Home", path: "/unit-leader", icon: LayoutDashboard },
+  { label: "Payments", path: "/unit-leader/payments", icon: Wallet },
+  { label: "Documentation", path: "/unit-leader/documentation", icon: FileText },
   { label: "Water", path: "/unit-leader/water", icon: Droplets },
   { label: "Electricity", path: "/unit-leader/electricity", icon: Zap },
-  { label: "History", path: "/unit-leader/history", icon: History },
 ];
 
 export function UnitLeaderLayout() {
