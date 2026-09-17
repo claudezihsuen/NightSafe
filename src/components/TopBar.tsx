@@ -162,7 +162,7 @@ export function TopBar() {
 
   return (
     <header
-      className="relative z-40 flex items-center justify-between border-b border-border/80 bg-card/90 px-4 py-3 shadow-[0_1px_0_rgba(90,63,43,0.03)] backdrop-blur sm:px-6 lg:px-10"
+      className="relative z-50 flex items-center justify-between border-b border-border/80 bg-card/90 px-4 py-3 shadow-[0_1px_0_rgba(90,63,43,0.03)] backdrop-blur sm:px-6 lg:px-10"
       style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}
     >
       <div className="min-w-0" data-i18n-skip>
@@ -192,7 +192,7 @@ export function TopBar() {
           </button>
 
           {notificationsOpen && (
-            <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-card border border-border bg-card shadow-raised sm:w-96">
+            <div className="absolute right-0 z-[60] mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-card border border-border bg-card shadow-raised sm:w-96">
               <div className="flex items-center justify-between border-b border-border bg-sage-50/60 px-4 py-3">
                 <div>
                   <p className="text-sm font-semibold text-ink">Notifications</p>
@@ -275,7 +275,7 @@ export function TopBar() {
           </button>
 
           {accountOpen && (
-            <div className="absolute right-0 mt-2 w-56 overflow-hidden rounded-card border border-border bg-card shadow-raised">
+            <div className="absolute right-0 z-[60] mt-2 w-56 overflow-hidden rounded-card border border-border bg-card shadow-raised">
               <div className="border-b border-border bg-sage-50/60 px-4 py-3" data-i18n-skip>
                 <p className="truncate text-sm font-semibold text-ink">{displayName}</p>
                 <p className="truncate text-xs text-ink/50">{user?.email}</p>
